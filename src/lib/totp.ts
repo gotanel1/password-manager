@@ -25,14 +25,14 @@ export function parseTotp(value: string): TotpParams | null {
       const u = new URL(v)
       if (u.host !== "totp") return null
       const alg = (u.searchParams.get("algorithm") ?? "SHA1").toUpperCase().replace("SHA", "SHA-") as TotpParams["algorithm"]
-      return {
-        secret: base32Decode(u.searchParams.get("secret") ?? ""),
-        digits: Number(u.searchParams.get("digits") ?? 6),
-        period: Number(u.searchParams.get("period") ?? 30),
-        algorithm: ["SHA-1", "SHA-256", "SHA-512"].includes(alg) ? alg : "SHA-1",
-      }
+      const secret = base32Decode(u.searchParams.get("secret") ?? "")
+      const digits = Number(u.searchParams.get("digits") ?? 6)
+      const period = Number(u.searchParams.get("period") ?? 30)
+      if (!secret.length || ![6, 8].includes(digits) || !Number.isInteger(period) || period <= 0 || !["SHA-1", "SHA-256", "SHA-512"].includes(alg)) return null
+      return { secret, digits, period, algorithm: alg }
     }
-    return { secret: base32Decode(v), digits: 6, period: 30, algorithm: "SHA-1" }
+    const secret = base32Decode(v)
+    return secret.length ? { secret, digits: 6, period: 30, algorithm: "SHA-1" } : null
   } catch {
     return null
   }

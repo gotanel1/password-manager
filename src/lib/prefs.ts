@@ -5,7 +5,14 @@ const KEY = "vault-prefs"
 const DEFAULTS: Prefs = { theme: "light", autoLockMin: 5, clipboardSec: 30 }
 
 export function loadPrefs(): Prefs {
-  try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(KEY) ?? "{}") } } catch { return DEFAULTS }
+  try {
+    const p = JSON.parse(localStorage.getItem(KEY) ?? "{}")
+    return {
+      theme: ["light", "dark", "system"].includes(p?.theme) ? p.theme : DEFAULTS.theme,
+      autoLockMin: [1, 5, 15, 30].includes(p?.autoLockMin) ? p.autoLockMin : DEFAULTS.autoLockMin,
+      clipboardSec: [15, 30, 60, 90].includes(p?.clipboardSec) ? p.clipboardSec : DEFAULTS.clipboardSec,
+    }
+  } catch { return { ...DEFAULTS } }
 }
 export function savePrefs(p: Prefs) {
   try { localStorage.setItem(KEY, JSON.stringify(p)) } catch { /* private mode: keep in memory */ }

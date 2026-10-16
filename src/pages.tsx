@@ -36,7 +36,7 @@ export function Generator() {
     void update((d) => ({
       ...d,
       generatorHistory: [{ value, at: Date.now() }, ...d.generatorHistory.filter((h) => h.value !== value)].slice(0, 10),
-    }))
+    })).catch(() => {})
   }
 
   return (
@@ -88,7 +88,7 @@ export function Generator() {
             </div>
           ))}
           {data.generatorHistory.length > 0 && (
-            <button className="text-action" type="button" onClick={() => void update((d) => ({ ...d, generatorHistory: [] }))}>ล้างประวัติ</button>
+            <button className="text-action" type="button" onClick={() => void update((d) => ({ ...d, generatorHistory: [] })).catch(() => {})}>ล้างประวัติ</button>
           )}
         </aside>
       </div>
@@ -175,10 +175,11 @@ function Select({ value, options, onChange, label }: { value: number; options: [
 }
 
 export function SettingsPage() {
-  const { prefs, setPrefs, signOut, email, exportBackup, importBackup, deleteVault, toast } = useVault()
+  const { prefs, setPrefs, signOut, email, exportBackup, deleteVault } = useVault()
   const [active, setActive] = useState("security")
   const [changing, setChanging] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [importing, setImporting] = useState<File | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const set = (p: Partial<Prefs>) => setPrefs({ ...prefs, ...p })
   const go = (id: string) => { setActive(id); document.getElementById(`settings-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" }) }
@@ -224,12 +225,11 @@ export function SettingsPage() {
             </SettingsRow>
             <SettingsRow title="นำเข้าไฟล์สำรอง" description="รวมรายการจากไฟล์สำรองของตู้เซฟ (รายการที่มีอยู่แล้วจะไม่ถูกทับ)">
               <Button icon={<Upload size={16} />} onClick={() => fileRef.current?.click()}>นำเข้า</Button>
-              <input ref={fileRef} type="file" accept=".json,application/json" hidden onChange={async (e) => {
+              <input ref={fileRef} type="file" accept=".json,application/json" hidden onChange={(e) => {
                 const f = e.target.files?.[0]
                 e.target.value = ""
                 if (!f) return
-                const pw = prompt("ใส่รหัสผ่านหลักของไฟล์สำรองนี้")
-                if (pw !== null) toast(await importBackup(f, pw))
+                setImporting(f)
               }} />
             </SettingsRow>
             <SettingsRow title="นำเข้าจาก Chrome, Bitwarden หรือ CSV" description="ย้ายรหัสผ่านจากโปรแกรมอื่น"><Soon /></SettingsRow>
@@ -265,12 +265,46 @@ export function SettingsPage() {
         </div>
       </div>
       {changing && <ChangeMasterModal close={() => setChanging(false)} />}
+      {importing && <ImportBackupModal file={importing} close={() => setImporting(null)} />}
       {deleting && (
         <Modal eyebrow="โซนอันตราย" title="ลบข้อมูลตู้เซฟ" onClose={() => setDeleting(false)}>
           <DeleteVaultForm email={email} onConfirm={deleteVault} close={() => setDeleting(false)} />
         </Modal>
       )}
     </main>
+  )
+}
+
+function ImportBackupModal({ file, close }: { file: File; close: () => void }) {
+  const { importBackup, toast } = useVault()
+  const [password, setPassword] = useState("")
+  const [error, setError] = useState("")
+  const [busy, setBusy] = useState(false)
+  return (
+    <Modal eyebrow="ไฟล์สำรองเข้ารหัส" title="นำเข้าไฟล์สำรอง" onClose={busy ? () => {} : close}>
+      <form className="editor-form" onSubmit={async (e) => {
+        e.preventDefault()
+        if (busy || !password) return
+        setBusy(true)
+        try {
+          const result = await importBackup(file, password)
+          if (!/^นำเข้า \d+ รายการ$/.test(result)) { setError(result); return }
+          toast(result)
+          close()
+        } catch { setError("นำเข้าไม่สำเร็จ กรุณาตรวจไฟล์และลองอีกครั้ง") }
+        finally { setBusy(false) }
+      }}>
+        <p className="muted-text">{file.name} · รายการเดิมจะไม่ถูกเขียนทับ</p>
+        <label className="master-field"><span>รหัสผ่านหลักของไฟล์สำรอง</span>
+          <input type="password" value={password} onChange={(e) => { setPassword(e.target.value); setError("") }} autoComplete="off" autoFocus required disabled={busy} />
+        </label>
+        {error && <small className="input-error" role="alert">{error}</small>}
+        <div className="editor-actions">
+          <Button variant="ghost" onClick={close} disabled={busy}>ยกเลิก</Button>
+          <Button variant="primary" type="submit" disabled={busy || !password}>{busy ? "กำลังนำเข้า…" : "นำเข้าไฟล์"}</Button>
+        </div>
+      </form>
+    </Modal>
   )
 }
 
@@ -316,7 +350,7 @@ function DeleteVaultForm({ email, onConfirm, close }: { email: string; onConfirm
   const [typed, setTyped] = useState("")
   const [busy, setBusy] = useState(false)
   return (
-    <form className="editor-form" onSubmit={async (e) => { e.preventDefault(); setBusy(true); await onConfirm() }}>
+    <form className="editor-form" onSubmit={async (e) => { e.preventDefault(); setBusy(true); try { await onConfirm() } catch { setBusy(false) } }}>
       <div className="master-warning">
         <AlertTriangle size={20} />
         <span><strong>รายการทั้งหมดจะหายไปถาวร</strong>แนะนำให้ส่งออกไฟล์สำรองก่อน</span>

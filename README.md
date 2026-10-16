@@ -8,7 +8,7 @@
 | `src/` | แอป React + Vite ที่ย้ายดีไซน์มาจาก Figma Make "Design Vault Password Manager" |
 | `src/lib/` | ส่วนที่ไม่เกี่ยวกับหน้าจอ: เข้ารหัส (`crypto.ts`), ซิงก์ Supabase (`sync.ts`), โมเดลข้อมูลและการวิเคราะห์ความปลอดภัย (`model.ts`), TOTP (`totp.ts`), ตัวสร้างรหัสผ่าน (`password.ts`) |
 | `src/dev/mock-supabase.ts` | Supabase จำลองในหน่วยความจำ ใช้กับ `npm run dev:mock` เท่านั้น ไม่ถูกรวมใน build จริง |
-| `vite.config.ts` | อ่าน `SUPABASE_URL` / `SUPABASE_ANON_KEY` และ build ไม่ผ่านถ้าค่าหายหรือผิดรูปแบบ |
+| `vite.config.ts` | เปิดให้ frontend เฉพาะ `SUPABASE_URL` / `SUPABASE_ANON_KEY` กัน secret/service_role key และห้าม production build ด้วย mock |
 | `supabase/migrations/` | ตาราง `vaults` พร้อม RLS (ผู้ใช้เข้าถึงได้เฉพาะแถวของตัวเอง) และ trigger ที่กันการเขียนทับข้อมูลที่ใหม่กว่า |
 | `netlify.toml` | คำสั่ง build, โฟลเดอร์ publish และ security headers (CSP ที่อนุญาตให้คุยกับ `*.supabase.co` เท่านั้น) |
 
@@ -69,6 +69,23 @@ npm run dev:mock
 ติดป้าย "เร็ว ๆ นี้": ปลดล็อกด้วย Passkey, 2FA ของบัญชี, รายการอุปกรณ์, ตรวจรหัสที่รั่วไหล, นำเข้าจาก Chrome/Bitwarden/CSV
 
 ตู้เซฟที่สร้างด้วยเวอร์ชันก่อนหน้าจะถูกแปลงเป็นรูปแบบใหม่ให้อัตโนมัติเมื่อปลดล็อก
+
+## ตรวจสอบก่อนทดลองใช้
+
+```bash
+npm test
+npm run typecheck
+npm run build
+npm run verify:build
+```
+
+มี Vitest สำหรับคิวบันทึก การเข้ารหัส ไฟล์สำรอง ข้อมูลตู้เซฟ และการเชื่อมต่อกับหน้าจอ การทดสอบที่จำลอง Supabase ไม่ยืนยัน RLS หรือการตั้งค่าบริการจริง
+
+- [คู่มือเริ่มใช้งานและสำรองข้อมูล](USER_GUIDE.md)
+- [ผลตรวจ ขั้นตอนเตรียมบัญชีทดสอบ และเงื่อนไขก่อน deploy](TESTING.md)
+- [เช็กลิสต์สถานะงาน](CHECKLIST.md)
+
+เมื่อบันทึกล้มเหลว แอปจะยังไม่แสดงรายการนั้นว่าเป็นข้อมูลที่บันทึกแล้ว และจะไม่ส่งออกสำเนาเก่าในฐานะไฟล์ล่าสุด ให้ลองบันทึกซ้ำก่อนล็อกหรือโหลดหน้าใหม่ งานที่รับไว้ในคิวจะจบก่อนเปิดรอบตู้เซฟถัดไป ส่วนหน้าจอตู้เซฟจะถูกซ่อนทันทีเมื่อล็อก
 
 ## หมายเหตุด้านความปลอดภัย
 

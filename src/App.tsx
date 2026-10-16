@@ -6,13 +6,13 @@ import { Detail, FolderModal, ItemEditor, ItemRow, Sidebar, TypePicker, applyFil
 import { Generator, SecurityPage, SettingsPage } from "./pages"
 import { VaultContext, useVault, type VaultApi } from "./state"
 import { isEnvelope, newKey, seal, unseal, type Key } from "./lib/crypto"
+import { VaultSession, type SyncState } from "./lib/session"
 import { analyze, emptyVault, migrate, newItem, type Item, type ItemType, type VaultData } from "./lib/model"
 import { copyText, download, loadPrefs, savePrefs, type Prefs } from "./lib/prefs"
 import { ConflictError, deleteVault, fetchVault, saveVault, sb, type Remote, type User } from "./lib/sync"
 
 type Phase = "loading" | "config" | "auth" | "email" | "onboarding" | "unlock" | "app"
 type Page = "vault" | "generator" | "security" | "settings"
-type SyncState = "saved" | "saving" | "error"
 
 const authError = (msg: string) =>
   /invalid login/i.test(msg) ? "อีเมลหรือรหัสผ่านบัญชีไม่ถูกต้อง"
@@ -30,29 +30,42 @@ export default function App() {
   const [prefs, setPrefsState] = useState<Prefs>(loadPrefs)
   const [sync, setSync] = useState<SyncState>("saved")
   const [toastMsg, setToastMsg] = useState("")
-  const keyRef = useRef<Key | null>(null)
+  const toastTimer = useRef<number | undefined>(undefined)
   const remoteRef = useRef<Remote>(null)
-  const dataRef = useRef<VaultData>(data)
-  const saveQueue = useRef<Promise<unknown>>(Promise.resolve())
+  const sessionRef = useRef<VaultSession | null>(null)
+  const draining = useRef<Promise<void>>(Promise.resolve())
+  const accessRequest = useRef(0)
   const userRef = useRef<User | null>(null)
 
   const toast = useCallback((m: string) => {
     setToastMsg(m)
-    window.clearTimeout((toast as any).t)
-    ;(toast as any).t = window.setTimeout(() => setToastMsg(""), 3200)
+    window.clearTimeout(toastTimer.current)
+    toastTimer.current = window.setTimeout(() => setToastMsg(""), 3200)
   }, [])
 
   // ---------- session ----------
-  const clearVault = () => {
-    keyRef.current = null
-    dataRef.current = emptyVault()
-    setData(dataRef.current)
-  }
+  const clearVault = useCallback(() => {
+    accessRequest.current++
+    const session = sessionRef.current
+    sessionRef.current = null
+    if (session) draining.current = Promise.all([draining.current, session.close()]).then(() => {
+      if (session.hasError) toast("มีงานที่ทำไม่สำเร็จก่อนล็อก กรุณาตรวจข้อมูลล่าสุดหลังปลดล็อก")
+    })
+    remoteRef.current = null
+    setData(emptyVault())
+  }, [toast])
   const enterLocked = useCallback(async (u: User) => {
+    const request = ++accessRequest.current
+    setPhase("unlock")
     try {
-      remoteRef.current = await fetchVault(u)
-      setPhase(remoteRef.current ? "unlock" : "onboarding")
+      await draining.current
+      const remote = await fetchVault(u)
+      if (request !== accessRequest.current || userRef.current?.id !== u.id) return
+      remoteRef.current = remote
+      setPhase(remote ? "unlock" : "onboarding")
     } catch (e) {
+      if (request !== accessRequest.current) return
+      setSync("error")
       toast("โหลดตู้เซฟไม่สำเร็จ: " + (e as Error).message)
       setPhase("unlock")
     }
@@ -67,47 +80,64 @@ export default function App() {
       setUser(next)
       clearVault()
       // Supabase advises against awaiting other client calls inside this callback.
-      setTimeout(() => (next ? void enterLocked(next) : setPhase("auth")), 0)
+      const request = accessRequest.current
+      setTimeout(() => {
+        if (request === accessRequest.current) next ? void enterLocked(next) : setPhase("auth")
+      }, 0)
     })
     return () => sub.subscription.unsubscribe()
-  }, [enterLocked])
+  }, [enterLocked, clearVault])
+
+  useEffect(() => () => {
+    accessRequest.current++
+    const session = sessionRef.current
+    sessionRef.current = null
+    void session?.close()
+    window.clearTimeout(toastTimer.current)
+  }, [])
 
   const lock = useCallback(() => {
     clearVault()
+    setPhase("unlock")
     if (userRef.current) void enterLocked(userRef.current)
-  }, [enterLocked])
+  }, [enterLocked, clearVault])
 
   const signOut = useCallback((everywhere = false) => {
     clearVault()
-    void sb!.auth.signOut({ scope: everywhere ? "global" : "local" })
-  }, [])
+    const request = accessRequest.current
+    setPhase("loading")
+    void draining.current.then(async () => {
+      if (request !== accessRequest.current) return
+      const { error } = await sb!.auth.signOut({ scope: everywhere ? "global" : "local" })
+      if (error && request === accessRequest.current) { setPhase("unlock"); toast("ออกจากระบบไม่สำเร็จ กรุณาลองอีกครั้ง") }
+    }).catch(() => { if (request === accessRequest.current) { setPhase("unlock"); toast("ออกจากระบบไม่สำเร็จ กรุณาลองอีกครั้ง") } })
+  }, [clearVault, toast])
 
   // ---------- persistence ----------
-  const persist = useCallback((next: VaultData) => {
-    const run = saveQueue.current.then(async () => {
-      setSync("saving")
-      try {
-        remoteRef.current = await saveVault(userRef.current!, remoteRef.current, await seal(keyRef.current!, next))
-        setSync("saved")
-      } catch (e) {
-        setSync("error")
-        if (e instanceof ConflictError) {
-          toast("ตู้เซฟถูกแก้ไขจากอุปกรณ์อื่น กรุณาปลดล็อกใหม่เพื่อโหลดข้อมูลล่าสุด")
-          lock()
-        } else toast("บันทึกไม่สำเร็จ: " + (e as Error).message)
-        throw e
-      }
-    })
-    saveQueue.current = run.catch(() => {})
-    return run as Promise<void>
-  }, [lock, toast])
-
-  const update = useCallback(async (fn: (d: VaultData) => VaultData) => {
-    const next = fn(dataRef.current)
-    dataRef.current = next
+  const openSession = (key: Key, next: VaultData, remote: NonNullable<Remote>, owner: User) => {
+    const session = new VaultSession(key, next, remote,
+      (previous, blob) => saveVault(owner, previous, blob),
+      (committed) => { if (sessionRef.current === session) setData(committed) },
+      (state) => { if (sessionRef.current === session) setSync(state) },
+    )
+    sessionRef.current = session
     setData(next)
-    await persist(next)
-  }, [persist])
+    setSync("saved")
+  }
+
+  const reportSaveError = (e: unknown, session: VaultSession) => {
+    if (sessionRef.current !== session) return
+    if (e instanceof ConflictError) {
+      lock()
+      toast("ตู้เซฟถูกแก้ไขจากอุปกรณ์อื่น กรุณาปลดล็อกใหม่เพื่อโหลดข้อมูลล่าสุด")
+    } else toast("บันทึกไม่สำเร็จ กรุณาลองอีกครั้ง ข้อมูลนี้ยังไม่ได้บันทึก")
+  }
+
+  const update = async (fn: (d: VaultData) => VaultData) => {
+    const session = sessionRef.current
+    if (!session) throw new Error("กรุณาปลดล็อกตู้เซฟก่อน")
+    try { await session.update(fn) } catch (e) { reportSaveError(e, session); throw e }
+  }
 
   // ---------- auto-lock ----------
   useEffect(() => {
@@ -131,42 +161,77 @@ export default function App() {
 
   // ---------- API for screens ----------
   const analysis = useMemo(() => analyze(data.items), [data.items])
+  const visibleSession = sessionRef.current
+  const active = () => !!visibleSession && sessionRef.current === visibleSession
   const api: VaultApi = {
     email: user?.email ?? "",
-    data, update, toast, prefs, setPrefs, analysis, lock, signOut,
-    copy: (label, text) =>
-      copyText(text, prefs.clipboardSec).then(
-        () => { toast(`คัดลอก${label}แล้ว · ล้างคลิปบอร์ดใน ${prefs.clipboardSec} วิ`); return true },
-        () => { toast("คัดลอกไม่สำเร็จ เบราว์เซอร์ไม่อนุญาตให้เข้าถึงคลิปบอร์ด"); return false },
-      ),
+    data, prefs, setPrefs, analysis,
+    update: (fn) => active() ? update(fn) : Promise.reject(new Error("ตู้เซฟถูกล็อกแล้ว กรุณาลองใหม่")),
+    toast: (message) => { if (active()) toast(message) },
+    lock: () => { if (active()) lock() },
+    signOut: (everywhere) => { if (active()) signOut(everywhere) },
+    copy: async (label, text) => {
+      if (!active()) return false
+      try {
+        await copyText(text, prefs.clipboardSec)
+        if (!active()) return false
+        toast(`คัดลอก${label}แล้ว · จะพยายามล้างคลิปบอร์ดใน ${prefs.clipboardSec} วิ`)
+        return true
+      } catch {
+        if (active()) toast("คัดลอกไม่สำเร็จ เบราว์เซอร์ไม่อนุญาตให้เข้าถึงคลิปบอร์ด")
+        return false
+      }
+    },
     changeMaster: async (oldPw, newPw) => {
-      try { await unseal(remoteRef.current!.blob, oldPw) } catch { return "รหัสผ่านหลักเดิมไม่ถูกต้อง" }
-      const prevKey = keyRef.current
-      keyRef.current = await newKey(newPw)
-      try { await persist(dataRef.current); return null } catch (e) { keyRef.current = prevKey; return (e as Error).message }
+      const session = sessionRef.current
+      if (!session || !active()) return "กรุณาปลดล็อกตู้เซฟก่อน"
+      try { await session.changeMaster(oldPw, newPw); return null } catch (e) {
+        reportSaveError(e, session)
+        return "เปลี่ยนรหัสผ่านหลักไม่สำเร็จ ตรวจรหัสผ่านเดิมและการเชื่อมต่อ แล้วปลดล็อกใหม่ก่อนลองอีกครั้ง"
+      }
     },
     exportBackup: () => {
-      if (!remoteRef.current) return
-      download(`vault-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(remoteRef.current.blob))
-      toast("ส่งออกไฟล์สำรองแล้ว (ยังเข้ารหัสอยู่)")
+      const session = sessionRef.current
+      if (!session || !active()) return
+      void session.backup().then((blob) => {
+        if (sessionRef.current !== session) return
+        download(`vault-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(blob))
+        toast("ส่งออกไฟล์สำรองล่าสุดแล้ว (ยังเข้ารหัสอยู่)")
+      }).catch(() => { if (active()) toast("ส่งออกไม่สำเร็จ มีงานบันทึกที่ล้มเหลว กรุณาบันทึกซ้ำหรือปลดล็อกใหม่ก่อน") })
     },
     importBackup: async (file, pw) => {
+      const session = sessionRef.current
+      if (!session || !active()) return "กรุณาปลดล็อกตู้เซฟก่อน"
       let blob: unknown
       try { blob = JSON.parse(await file.text()) } catch { return "ไฟล์ไม่ถูกต้อง" }
       if (!isEnvelope(blob)) return "ไฟล์นี้ไม่ใช่ไฟล์สำรองของตู้เซฟ"
       let incoming: VaultData
-      try { incoming = migrate((await unseal(blob, pw)).data) } catch { return "รหัสผ่านไม่ถูกต้อง" }
-      const ids = new Set(dataRef.current.items.map((i) => i.id))
-      const added = incoming.items.filter((i) => !ids.has(i.id))
-      await update((d) => ({ ...d, items: [...d.items, ...added], folders: [...new Set([...d.folders, ...incoming.folders])] }))
-      return `นำเข้า ${added.length} รายการ`
+      try { incoming = migrate((await unseal(blob, pw)).data) } catch { return "รหัสผ่านไม่ถูกต้อง หรือไฟล์สำรองเสียหาย/ไม่รองรับ" }
+      if (sessionRef.current !== session) return "ตู้เซฟถูกล็อกแล้ว กรุณาลองใหม่"
+      let count = 0
+      try {
+        await update((d) => {
+          const ids = new Set(d.items.map((i) => i.id))
+          const added = incoming.items.filter((i) => { if (ids.has(i.id)) return false; ids.add(i.id); return true })
+          count = added.length
+          return { ...d, items: [...d.items, ...added], folders: [...new Set([...d.folders, ...incoming.folders])] }
+        })
+        return `นำเข้า ${count} รายการ`
+      } catch { return "นำเข้าไม่สำเร็จ ข้อมูลเดิมยังอยู่ กรุณาลองอีกครั้ง" }
     },
     deleteVault: async () => {
-      await deleteVault(userRef.current!)
-      remoteRef.current = null
+      if (!active()) throw new Error("กรุณาปลดล็อกตู้เซฟก่อน")
+      const owner = userRef.current!
       clearVault()
-      setPhase("onboarding")
-      toast("ลบข้อมูลตู้เซฟแล้ว")
+      setPhase("unlock")
+      try {
+        await draining.current
+        if (userRef.current?.id !== owner.id) return
+        await deleteVault(owner)
+        if (userRef.current?.id !== owner.id) return
+        setPhase("onboarding")
+        toast("ลบข้อมูลตู้เซฟแล้ว")
+      } catch (e) { toast("ลบข้อมูลไม่สำเร็จ กรุณาปลดล็อกใหม่แล้วลองอีกครั้ง"); throw e }
     },
   }
 
@@ -204,15 +269,17 @@ export default function App() {
       <OnboardingScreen
         email={user?.email ?? ""}
         onCreate={async (master) => {
+          const request = ++accessRequest.current
+          const owner = userRef.current!
           try {
-            keyRef.current = await newKey(master)
+            await draining.current
+            const key = await newKey(master)
             const fresh = emptyVault()
-            remoteRef.current = await saveVault(user!, null, await seal(keyRef.current, fresh))
-            dataRef.current = fresh
-            setData(fresh)
+            const remote = await saveVault(owner, null, await seal(key, fresh))
+            if (request !== accessRequest.current) return "สถานะบัญชีเปลี่ยน กรุณาลองใหม่"
+            openSession(key, fresh, remote, owner)
             return null
           } catch (e) {
-            keyRef.current = null
             return "สร้างตู้เซฟไม่สำเร็จ: " + (e as Error).message
           }
         }}
@@ -225,18 +292,24 @@ export default function App() {
         email={user?.email ?? ""}
         onSignOut={() => signOut()}
         onUnlock={async (password) => {
-          try { remoteRef.current = await fetchVault(user!) } catch { /* keep the copy we have */ }
-          if (!remoteRef.current) { setPhase("onboarding"); return null }
+          const request = ++accessRequest.current
+          const owner = userRef.current!
+          let remote: Remote
+          try { await draining.current; remote = await fetchVault(owner) } catch {
+            if (request === accessRequest.current) setSync("error")
+            return "โหลดข้อมูลล่าสุดไม่สำเร็จ ตรวจการเชื่อมต่อแล้วลองอีกครั้ง"
+          }
+          if (request !== accessRequest.current) return "สถานะบัญชีเปลี่ยน กรุณาลองใหม่"
+          if (!remote) { setPhase("onboarding"); return null }
           try {
-            const { key, data: raw } = await unseal(remoteRef.current.blob, password)
-            keyRef.current = key
-            dataRef.current = migrate(raw)
-            setData(dataRef.current)
-            setSync("saved")
+            const { key, data: raw } = await unseal(remote.blob, password)
+            const next = migrate(raw)
+            if (request !== accessRequest.current) return "สถานะบัญชีเปลี่ยน กรุณาลองใหม่"
+            openSession(key, next, remote, owner)
             setPhase("app")
             return null
           } catch {
-            return "รหัสผ่านหลักไม่ถูกต้อง กรุณาลองอีกครั้ง"
+            return "รหัสผ่านหลักไม่ถูกต้อง หรือข้อมูลตู้เซฟเสียหาย/ไม่รองรับ กรุณาตรวจสอบแล้วลองอีกครั้ง"
           }
         }}
       />
