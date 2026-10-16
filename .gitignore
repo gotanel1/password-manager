@@ -1,6 +1,5 @@
 node_modules/
 .env
-site/config.js
-site/vendor/
+dist/
 .netlify/
 supabase/.temp/

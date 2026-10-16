@@ -3,14 +3,28 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "node scripts/build.mjs",
-    "dev": "node scripts/build.mjs && npx --yes http-server@14.1.1 site -a 127.0.0.1 -p 8765 -c-1"
+    "dev": "vite --host 127.0.0.1 --port 8765",
+    "dev:mock": "cross-env VAULT_MOCK=1 vite --host 127.0.0.1 --port 8765",
+    "build": "tsc && vite build",
+    "preview": "vite preview --host 127.0.0.1 --port 8765"
   },
   "dependencies": {
-    "@fontsource/ibm-plex-mono": "5.3.0",
     "@fontsource/ibm-plex-sans-thai": "5.3.0",
-    "@fontsource/noto-serif-thai": "5.3.0",
-    "@fontsource/source-serif-4": "5.3.0",
-    "@supabase/supabase-js": "2.117.2"
+    "@fontsource/jetbrains-mono": "5.3.0",
+    "@supabase/supabase-js": "2.117.2",
+    "lucide-react": "1.57.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "4.3.3",
+    "@types/node": "22.15.0",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.2",
+    "cross-env": "7.0.3",
+    "tailwindcss": "4.3.3",
+    "typescript": "5.9.3",
+    "vite": "8.3.4"
   }
 }

@@ -5,8 +5,10 @@
 
 | ส่วน | หน้าที่ |
 |---|---|
-| `site/` | หน้าเว็บ ไม่มี framework (`index.html`, `app.js`, `app.css`) |
-| `scripts/build.mjs` | คัดลอก supabase-js และฟอนต์ (latin + thai) ไปไว้ที่ `site/vendor/` และสร้าง `site/config.js` จาก env |
+| `src/` | แอป React + Vite ที่ย้ายดีไซน์มาจาก Figma Make "Design Vault Password Manager" |
+| `src/lib/` | ส่วนที่ไม่เกี่ยวกับหน้าจอ: เข้ารหัส (`crypto.ts`), ซิงก์ Supabase (`sync.ts`), โมเดลข้อมูลและการวิเคราะห์ความปลอดภัย (`model.ts`), TOTP (`totp.ts`), ตัวสร้างรหัสผ่าน (`password.ts`) |
+| `src/dev/mock-supabase.ts` | Supabase จำลองในหน่วยความจำ ใช้กับ `npm run dev:mock` เท่านั้น ไม่ถูกรวมใน build จริง |
+| `vite.config.ts` | อ่าน `SUPABASE_URL` / `SUPABASE_ANON_KEY` และ build ไม่ผ่านถ้าค่าหายหรือผิดรูปแบบ |
 | `supabase/migrations/` | ตาราง `vaults` พร้อม RLS (ผู้ใช้เข้าถึงได้เฉพาะแถวของตัวเอง) และ trigger ที่กันการเขียนทับข้อมูลที่ใหม่กว่า |
 | `netlify.toml` | คำสั่ง build, โฟลเดอร์ publish และ security headers (CSP ที่อนุญาตให้คุยกับ `*.supabase.co` เท่านั้น) |
 
@@ -35,7 +37,7 @@
 
 1. Push repo นี้ขึ้น GitHub
 2. ที่ Netlify ไปที่ **Add new site → Import an existing project → GitHub** แล้วเลือก repo นี้
-   ค่า build จะถูกอ่านจาก `netlify.toml` อัตโนมัติ (`npm run build` และโฟลเดอร์ `site`)
+   ค่า build จะถูกอ่านจาก `netlify.toml` อัตโนมัติ (`npm run build` และโฟลเดอร์ `dist`)
 3. ไปที่ **Site configuration → Environment variables** แล้วเพิ่มค่า:
    - `SUPABASE_URL` = `https://<project-ref>.supabase.co`
    - `SUPABASE_ANON_KEY` = anon key
@@ -54,6 +56,19 @@ npm install
 npm run dev
 ```
 จากนั้นเปิด http://127.0.0.1:8765 แล้วเพิ่ม `http://127.0.0.1:8765` ใน Redirect URLs ของ Supabase ด้วย
+
+ถ้าอยากลองหน้าจอโดยไม่ต่อ Supabase จริง ให้รันคำสั่งนี้ (ข้อมูลจะเก็บใน localStorage ของเบราว์เซอร์และไม่ถูกส่งออกไปไหน):
+```bash
+npm run dev:mock
+```
+
+## ฟีเจอร์
+
+ใช้งานได้จริง: สมัคร/ล็อกอิน, onboarding พร้อม Emergency Kit, ปลดล็อกด้วยรหัสผ่านหลัก, รายการ 6 ประเภท (บัญชีล็อกอิน บัตรเครดิต บันทึกลับ ข้อมูลส่วนตัว Wi-Fi บัญชีธนาคาร), โฟลเดอร์, แท็ก, รายการโปรด, ถังขยะ, รหัส 2FA (TOTP), ประวัติรหัสผ่าน, ตัวสร้างรหัสผ่าน/วลี/PIN, แดชบอร์ดตรวจรหัสอ่อน ซ้ำ และเก่า, ล็อกอัตโนมัติ, ล้างคลิปบอร์ดอัตโนมัติ, โหมดมืด, ส่งออก/นำเข้าไฟล์สำรองแบบเข้ารหัส, เปลี่ยนรหัสผ่านหลัก, ออกจากระบบทุกอุปกรณ์
+
+ติดป้าย "เร็ว ๆ นี้": ปลดล็อกด้วย Passkey, 2FA ของบัญชี, รายการอุปกรณ์, ตรวจรหัสที่รั่วไหล, นำเข้าจาก Chrome/Bitwarden/CSV
+
+ตู้เซฟที่สร้างด้วยเวอร์ชันก่อนหน้าจะถูกแปลงเป็นรูปแบบใหม่ให้อัตโนมัติเมื่อปลดล็อก
 
 ## หมายเหตุด้านความปลอดภัย
 
