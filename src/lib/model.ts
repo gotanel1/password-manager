@@ -42,9 +42,9 @@ export const TYPES: Record<ItemType, { label: string; hint: string; fields: Fiel
     label: "บัตรเครดิต", hint: "บัตรชำระเงิน", subtitle: "cardNumber",
     fields: [
       { key: "cardHolder", label: "ชื่อผู้ถือบัตร" },
-      { key: "cardNumber", label: "หมายเลขบัตร", secret: true, mono: true },
+      { key: "cardNumber", label: "หมายเลขบัตร", secret: true, mono: true, placeholder: "0000 0000 0000 0000" },
       { key: "expiry", label: "วันหมดอายุ", mono: true, placeholder: "MM/YY" },
-      { key: "cvv", label: "CVV", secret: true, mono: true },
+      { key: "cvv", label: "CVV", secret: true, mono: true, placeholder: "123" },
     ],
   },
   note: { label: "บันทึกปลอดภัย", hint: "ข้อมูลลับทั่วไป", subtitle: "", fields: [] },

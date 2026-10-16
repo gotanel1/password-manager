@@ -11,6 +11,7 @@ import {
 } from "./lib/model"
 import { parseTotp, secondsLeft, totpAt } from "./lib/totp"
 import { LIMITS, itemWarnings, parseTags, validateFolderName, validateItem } from "./lib/validate"
+import { applyMask, formatCardNumber } from "./lib/masks"
 import { randomPassword, strength } from "./lib/password"
 
 export const TYPE_ICON: Record<ItemType, (size?: number) => ReactNode> = {
@@ -167,15 +168,15 @@ function Field({ label, children, mono }: { label: string; children: ReactNode; 
   )
 }
 
-function SecretValue({ label, value }: { label: string; value: string }) {
+function SecretValue({ label, value, display = value, copyText = value }: { label: string; value: string; display?: string; copyText?: string }) {
   const [show, setShow] = useState(false)
   return (
     <>
-      <span>{show ? value : "•".repeat(Math.min(18, Math.max(8, value.length)))}</span>
+      <span>{show ? display : "•".repeat(Math.min(18, Math.max(8, value.length)))}</span>
       <IconButton label={show ? `ซ่อน${label}` : `แสดง${label}`} onClick={() => setShow(!show)}>
         {show ? <EyeOff size={17} /> : <Eye size={17} />}
       </IconButton>
-      <CopyButton label={label} text={value} />
+      <CopyButton label={label} text={copyText} />
     </>
   )
 }
@@ -339,7 +340,12 @@ export function Detail({ item, onBack, onEdit }: { item?: Item; onBack: () => vo
             {fields.map((f) => (
               <Field key={f.key} label={f.label} mono={f.mono}>
                 {f.secret ? (
-                  <SecretValue label={f.label} value={item.fields[f.key]} />
+                  f.key === "cardNumber" ? (
+                    // Shown grouped like the card; copied as plain digits so it pastes into any checkout form.
+                    <SecretValue label={f.label} value={item.fields[f.key]} display={formatCardNumber(item.fields[f.key])} copyText={item.fields[f.key].replace(/\D/g, "")} />
+                  ) : (
+                    <SecretValue label={f.label} value={item.fields[f.key]} />
+                  )
                 ) : f.link ? (
                   <>
                     <a href={/^https?:\/\//i.test(item.fields[f.key]) ? item.fields[f.key] : `https://${item.fields[f.key]}`} target="_blank" rel="noreferrer noopener">
@@ -527,7 +533,7 @@ export function ItemEditor({ initial, isNew, focusPassword, close, onSaved }: {
             ) : f.secret ? (
               <div className={`editor-input ${shown(f.key) ? "has-error" : ""}`}>
                 <input ref={f.key === "password" ? pwRef : undefined} className={f.mono ? "mono" : ""} type={reveal[f.key] ? "text" : "password"}
-                  value={item.fields[f.key] ?? ""} onChange={(e) => setField(f.key, e.target.value)} placeholder={f.placeholder}
+                  value={item.fields[f.key] ?? ""} onChange={(e) => setField(f.key, applyMask(f.key, e.target.value, item.fields[f.key] ?? ""))} placeholder={f.placeholder}
                   autoComplete={f.key === "password" ? "new-password" : "off"} spellCheck={false} inputMode={NUMERIC.has(f.key) ? "numeric" : undefined} {...aria(f.key)} />
                 <IconButton label={reveal[f.key] ? "ซ่อน" : "แสดง"} onClick={() => setReveal({ ...reveal, [f.key]: !reveal[f.key] })}>
                   {reveal[f.key] ? <EyeOff size={17} /> : <Eye size={17} />}
@@ -540,7 +546,8 @@ export function ItemEditor({ initial, isNew, focusPassword, close, onSaved }: {
                 )}
               </div>
             ) : (
-              <input className={f.mono ? "mono" : ""} value={item.fields[f.key] ?? ""} onChange={(e) => setField(f.key, e.target.value)}
+              <input className={f.mono ? "mono" : ""} value={item.fields[f.key] ?? ""}
+                onChange={(e) => setField(f.key, applyMask(f.key, e.target.value, item.fields[f.key] ?? ""))}
                 placeholder={f.placeholder} type="text" autoComplete="off" {...aria(f.key)}
                 inputMode={f.link ? "url" : f.key === "email" ? "email" : f.key === "phone" ? "tel" : NUMERIC.has(f.key) ? "numeric" : undefined} />
             )}
