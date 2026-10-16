@@ -19,6 +19,15 @@ describe("create and open", () => {
     expect(r.legacy).toBe(false)
     await expect(openVault(c.remote, "Wrong-test!Master-2026")).rejects.toBeInstanceOf(WrongPasswordError)
   })
+  it("reuses keys already derived for sign-in when the salt matches, and derives otherwise", async () => {
+    const master = await deriveForEmail(password, email)
+    const c = await createVault(master, saver())
+    // The password argument is ignored when matching keys are supplied.
+    expect((await openVault(c.remote, "not-used", master)).legacy).toBe(false)
+    const other = await deriveForEmail(password, "other@example.invalid")
+    expect((await openVault(c.remote, password, other)).legacy).toBe(false)
+    await expect(openVault(c.remote, "Wrong-test!Master-2026", other)).rejects.toBeInstanceOf(WrongPasswordError)
+  })
   it("reports a two-password vault as legacy and upgrades it in one version-checked write", async () => {
     const remote = { blob: await seal(await newKey(password), withNote), version: 7 }
     const r = await openVault(remote, password)

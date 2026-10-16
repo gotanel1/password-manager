@@ -3,6 +3,7 @@ import { deriveForEmail, headerOf, isEnvelopeV2, newHeader, newRecoveryCode, new
 import { emptyVault, newItem } from "../src/lib/model"
 import { VaultSession } from "../src/lib/session"
 import { ConflictError } from "../src/lib/sync"
+import { WrongPasswordError } from "../src/lib/vaultkeys"
 import type { Envelope } from "../src/lib/crypto"
 
 const password = "Test-only!Strong-Master-2026"
@@ -86,15 +87,37 @@ describe("master password change (single password)", () => {
     const vk = await unwrap(backup.keys.recovery!, await recoveryWrapKey(recoveryCode))
     expect(await openV2(backup, vk)).toEqual(emptyVault())
   })
-  it("points the vault back at the old password if the login change fails", async () => {
+  it("keeps both passwords working if the login change fails, since the server may have applied it", async () => {
     const { session, save } = await setup()
-    await expect(session.changeMaster(password, newPassword, async () => { throw new Error("auth down") })).rejects.toThrow("auth down")
-    // First write holds both slots; the revert write leaves only the old password.
+    await expect(session.changeMaster(password, newPassword, async () => { throw new Error("response lost") })).rejects.toThrow("response lost")
+    expect(save).toHaveBeenCalledTimes(1)
+    const stored = save.mock.calls[0][1]
+    expect(await open(stored, password)).toEqual(emptyVault())
+    expect(await open(stored, newPassword)).toEqual(emptyVault())
+    // Later edits keep both slots until the next successful change.
+    await session.update(add("after"))
+    const later = save.mock.calls[1][1]
+    expect(await open(later, password)).toMatchObject({ items: [{ title: "after" }] })
+    expect(await open(later, newPassword)).toMatchObject({ items: [{ title: "after" }] })
+  })
+  it("drops the old slot on the next save when the cleanup write fails", async () => {
+    const { session, save } = await setup()
+    save.mockImplementationOnce(async (previous, blob) => ({ blob, version: previous.version + 1 }))
+      .mockRejectedValueOnce(new Error("offline"))
+    await session.changeMaster(password, newPassword, async () => {})
+    await session.update(add("next"))
+    const next = save.mock.calls[2][1]
+    expect(next.keys.masterPrev).toBeUndefined()
+    expect(await open(next, newPassword)).toMatchObject({ items: [{ title: "next" }] })
+    await expect(open(next, password)).rejects.toThrow()
+  })
+  it("treats a conflict on the cleanup write as a conflict for later saves", async () => {
+    const { session, save } = await setup()
+    save.mockImplementationOnce(async (previous, blob) => ({ blob, version: previous.version + 1 }))
+      .mockRejectedValueOnce(new ConflictError())
+    await session.changeMaster(password, newPassword, async () => {})
+    await expect(session.update(add("stale"))).rejects.toBeInstanceOf(ConflictError)
     expect(save).toHaveBeenCalledTimes(2)
-    const reverted = save.mock.calls[1][1]
-    expect(await open(reverted, password)).toEqual(emptyVault())
-    await expect(open(reverted, newPassword)).rejects.toThrow()
-    expect(reverted.keys.masterPrev).toBeUndefined()
   })
   it("keeps the old key after a failed write and permits retry", async () => {
     const { session, save } = await setup()
@@ -108,9 +131,11 @@ describe("master password change (single password)", () => {
   it("rejects the wrong old password without writing or touching the login", async () => {
     const { session, save } = await setup()
     const setLogin = vi.fn(async () => {})
-    await expect(session.changeMaster("Wrong-test!Master-2026", newPassword, setLogin)).rejects.toThrow()
+    await expect(session.changeMaster("Wrong-test!Master-2026", newPassword, setLogin)).rejects.toBeInstanceOf(WrongPasswordError)
     expect(save).not.toHaveBeenCalled()
     expect(setLogin).not.toHaveBeenCalled()
+    // A typo is not a failed save: the session stays healthy.
+    expect(session.hasError).toBe(false)
   })
 })
 

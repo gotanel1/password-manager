@@ -3,6 +3,7 @@ import {
   deriveMasterKeys, newRecoveryCode, recoveryWrapKey, sealV2, unlockWithMaster, wrap, type EnvelopeV2, type Header,
 } from "./keys"
 import type { VaultData } from "./model"
+import { WrongPasswordError } from "./vaultkeys"
 import { ConflictError, type Remote } from "./sync"
 
 export type SyncState = "saved" | "saving" | "error"
@@ -36,7 +37,8 @@ export class VaultSession {
       if (this.conflict) throw new ConflictError()
       return operation()
     }).catch((error: unknown) => {
-      this.error = error
+      // A mistyped password changed nothing, so it isn't a failed save.
+      if (!(error instanceof WrongPasswordError)) this.error = error
       if (error instanceof ConflictError) this.conflict = true
       throw error
     }).finally(() => {
@@ -72,21 +74,24 @@ export class VaultSession {
     return this.enqueue(async () => {
       const salt = unb64(this.header.salt)
       const oldM = await deriveMasterKeys(oldPassword, salt)
-      await unlockWithMaster(this.header, oldM) // throws on a wrong old password, before any write
+      // A wrong old password is rejected before any write.
+      await unlockWithMaster(this.header, oldM).catch(() => { throw new WrongPasswordError() })
       const newM = await deriveMasterKeys(newPassword, salt)
       const vk = this.vaultKey!
       const { masterPrev: _drop, ...slots } = this.header.keys
       const both: Header = { ...this.header, keys: { ...slots, master: await wrap(vk, newM.wrap), masterPrev: await wrap(vk, oldM.wrap) } }
       await this.commit(both, this.data)
+      // If this throws, the server may still have applied the change (e.g. a lost response), so
+      // keep both slots: the vault keeps opening with whichever password the login ended up on.
+      await setLogin(newM.login)
+      const single: Header = { ...both, keys: { ...slots, master: both.keys.master } }
       try {
-        await setLogin(newM.login)
+        await this.commit(single, this.data)
       } catch (e) {
-        // Login still uses the old password: point the vault back at it.
-        await this.commit({ ...both, keys: { ...slots, master: await wrap(vk, oldM.wrap) } }, this.data).catch(() => {})
-        throw e
+        // The login has moved, so the old slot must not be written again: the next save drops it.
+        this.header = single
+        if (e instanceof ConflictError) this.conflict = true
       }
-      // Best effort: if this fails the extra slot is harmless and is cleared on the next change.
-      await this.commit({ ...both, keys: { ...slots, master: both.keys.master } }, this.data).catch(() => {})
     })
   }
 

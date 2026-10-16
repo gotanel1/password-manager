@@ -1,8 +1,8 @@
 // Opening, creating, upgrading and recovering vaults. Pure crypto + one save call; no UI state.
-import { isEnvelope, unb64, unseal, type Envelope } from "./crypto"
+import { b64, isEnvelope, unb64, unseal, type Envelope } from "./crypto"
 import {
   deriveMasterKeys, emailSalt, headerOf, isEnvelopeV2, newHeader, newRecoveryCode, newVaultKey, openV2, recoveryWrapKey, sealV2,
-  unlockWithMaster, unwrap, wrap, type EnvelopeV2, type Header, type MasterKeys,
+  unlockWithMaster, unwrap, type EnvelopeV2, type Header, type MasterKeys,
 } from "./keys"
 import { emptyVault, migrate, type VaultData } from "./model"
 import type { Remote } from "./sync"
@@ -29,14 +29,15 @@ export async function createVault(master: MasterKeys, save: Save): Promise<Opene
  * Opens a stored vault with the master password. A v1 vault (two-password era) is decrypted
  * with the old scheme and reported as `legacy`, so the caller can upgrade it.
  */
-export async function openVault(remote: Stored, password: string): Promise<
+export async function openVault(remote: Stored, password: string, derived?: MasterKeys): Promise<
   | ({ legacy: false; master: MasterKeys } & Opened)
   | { legacy: true; data: VaultData; remote: Stored }
 > {
   const blob = remote.blob as unknown
   if (isEnvelopeV2(blob)) {
     // Derive from the stored salt so a vault keeps opening even if the address is re-cased.
-    const master = await deriveMasterKeys(password, unb64(blob.salt))
+    // `derived` (already computed for sign-in) is reused when it was made with that same salt.
+    const master = derived && b64(derived.salt) === blob.salt ? derived : await deriveMasterKeys(password, unb64(blob.salt))
     let vaultKey: CryptoKey
     try { vaultKey = await unlockWithMaster(blob, master) } catch { throw new WrongPasswordError() }
     return { legacy: false, master, vaultKey, header: headerOf(blob), data: migrate(await openV2(blob, vaultKey)), remote }
@@ -73,10 +74,7 @@ export async function recoverVault(remote: Stored, code: string, newPassword: st
   const data = migrate(await openV2(blob, vaultKey))
   const master = await deriveMasterKeys(newPassword, await emailSalt(email))
   const recoveryCode = newRecoveryCode()
-  const header: Header = {
-    ...headerOf(blob), salt: (await newHeader(vaultKey, master, recoveryCode)).salt,
-    keys: { master: await wrap(vaultKey, master.wrap), recovery: await wrap(vaultKey, await recoveryWrapKey(recoveryCode)) },
-  }
+  const header = await newHeader(vaultKey, master, recoveryCode)
   // Move the login first: if the vault write then fails, the old recovery code still opens the
   // untouched vault and the user can simply recover again.
   await beforeSave(master)
