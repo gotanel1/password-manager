@@ -2,10 +2,11 @@
 import { useEffect, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from "react"
 import {
   AlertTriangle, Check, ChevronDown, ChevronRight, Clock3, Copy, Download, Fingerprint, KeyRound, Laptop, LogOut, Moon, Network, RefreshCw,
-  Settings, Shield, ShieldCheck, Sun, Upload, WandSparkles,
+  Settings, Shield, ShieldCheck, Sun, Upload, WandSparkles, LifeBuoy,
 } from "lucide-react"
 import { Badge, Button, IconButton, Modal, PageTitle, SettingToggle, SettingsRow, SettingsSection, Soon, Toggle, useConfirm } from "./ui"
 import { useVault } from "./state"
+import { RecoveryCodeCard } from "./access"
 import { ago, type Issue } from "./lib/model"
 import { passphrase, pin, randomPassword, strength } from "./lib/password"
 import type { Prefs } from "./lib/prefs"
@@ -182,10 +183,11 @@ function Select({ value, options, onChange, label }: { value: number; options: [
 }
 
 export function SettingsPage() {
-  const { prefs, setPrefs, signOut, email, exportBackup, deleteVault } = useVault()
+  const { prefs, setPrefs, signOut, email, exportBackup, deleteVault, rotateRecovery, toast } = useVault()
   const confirm = useConfirm()
   const [active, setActive] = useState("security")
   const [changing, setChanging] = useState(false)
+  const [newCode, setNewCode] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [importing, setImporting] = useState<File | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -211,8 +213,20 @@ export function SettingsPage() {
               <Select label="ล้างคลิปบอร์ด" value={prefs.clipboardSec} onChange={(v) => set({ clipboardSec: v })}
                 options={[[15, "15 วินาที"], [30, "30 วินาที"], [60, "1 นาที"], [90, "90 วินาที"]]} />
             </SettingsRow>
-            <SettingsRow title="รหัสผ่านหลัก" description="เข้ารหัสตู้เซฟใหม่ด้วยรหัสผ่านหลักใหม่">
+            <SettingsRow title="รหัสผ่านหลัก" description="ใช้ทั้งเข้าสู่ระบบและเปิดตู้เซฟ เปลี่ยนแล้วใช้รหัสใหม่ได้ทุกอุปกรณ์">
               <Button icon={<KeyRound size={16} />} onClick={() => setChanging(true)}>เปลี่ยน</Button>
+            </SettingsRow>
+            <SettingsRow title="รหัสกู้คืน" description="ใช้กู้ตู้เซฟเมื่อลืมรหัสผ่านหลัก ถ้าทำหายหรือสงสัยว่ารั่ว ให้สร้างใหม่">
+              <Button icon={<LifeBuoy size={16} />} onClick={async () => {
+                const ok = await confirm({
+                  title: "สร้างรหัสกู้คืนใหม่?", tone: "warning", confirmLabel: "สร้างรหัสใหม่",
+                  message: "รหัสกู้คืนเดิมจะใช้ไม่ได้ทันที อย่าลืมเก็บรหัสใหม่ไว้ใน Emergency Kit",
+                })
+                if (!ok) return
+                const code = await rotateRecovery()
+                if (code) setNewCode(code)
+                else toast("สร้างรหัสกู้คืนใหม่ไม่สำเร็จ รหัสเดิมยังใช้ได้")
+              }}>สร้างใหม่</Button>
             </SettingsRow>
             <SettingsRow title="ปลดล็อกด้วย Passkey" description="ใช้ลายนิ้วมือหรือใบหน้า">
               <span className="row-inline"><Soon /><Toggle checked={false} onChange={() => {}} label="ปลดล็อกด้วย Passkey" disabled /></span>
@@ -279,6 +293,13 @@ export function SettingsPage() {
         </div>
       </div>
       {changing && <ChangeMasterModal close={() => setChanging(false)} />}
+      {newCode && (
+        <Modal eyebrow="ความปลอดภัย" title="รหัสกู้คืนใหม่" onClose={() => setNewCode(null)}>
+          <p className="muted-text">รหัสเดิมใช้ไม่ได้แล้ว เก็บรหัสนี้ไว้ในที่ปลอดภัย หน้าต่างนี้จะไม่แสดงรหัสซ้ำอีก</p>
+          <RecoveryCodeCard email={email} code={newCode} />
+          <div className="editor-actions"><Button variant="primary" onClick={() => setNewCode(null)}>เก็บแล้ว</Button></div>
+        </Modal>
+      )}
       {importing && <ImportBackupModal file={importing} close={() => setImporting(null)} />}
       {deleting && (
         <Modal eyebrow="โซนอันตราย" title="ลบข้อมูลตู้เซฟ" onClose={() => setDeleting(false)}>

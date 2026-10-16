@@ -2105,3 +2105,14 @@ input.mono, .editor-input input.mono { font-family: "JetBrains Mono", monospace;
 .confirm-body--danger > svg { color: var(--danger); }
 .confirm-body--warning { color: var(--text); background: var(--warning-soft); border: 1px solid color-mix(in srgb, var(--warning) 25%, transparent); }
 .confirm-body--warning > svg { color: var(--warning); }
+
+/* Single-password access: recovery code and kit */
+.auth-links { display: flex; flex-direction: column; align-items: center; gap: 6px; margin-top: 14px; }
+.auth-card > .text-action { display: inline-flex; align-items: center; gap: 4px; margin-top: 14px; }
+.auth-card .master-warning, .auth-form .requirement-list { margin-top: 12px; }
+.access-input input.mono { font-family: "JetBrains Mono", monospace; letter-spacing: .04em; }
+.recovery-card { margin: 18px 0 6px; padding: 16px; border: 1px dashed var(--border-strong); border-radius: 12px; background: var(--surface-subtle); text-align: center; }
+.recovery-code { display: block; margin: 8px 0 14px; font: 600 18px/1.5 "JetBrains Mono", monospace; letter-spacing: .06em; color: var(--text); overflow-wrap: anywhere; user-select: all; }
+.recovery-actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 8px; }
+.kit-confirm { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 14px; font-size: 13px; cursor: pointer; }
+.kit-confirm input { width: 16px; height: 16px; accent-color: var(--accent); }

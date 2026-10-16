@@ -15,7 +15,7 @@ beforeEach(async () => {
     email: "test@example.invalid", data: emptyVault(), analysis: analyze([]),
     prefs: { theme: "light", autoLockMin: 5, clipboardSec: 30 }, setPrefs: vi.fn(),
     update: vi.fn(), copy: vi.fn(), toast: vi.fn(), lock: vi.fn(), signOut: vi.fn(),
-    changeMaster: vi.fn(), importBackup: vi.fn(), exportBackup: vi.fn(), deleteVault: vi.fn(),
+    changeMaster: vi.fn(), rotateRecovery: vi.fn(), importBackup: vi.fn(), exportBackup: vi.fn(), deleteVault: vi.fn(),
   }
   host = document.createElement("div"); document.body.append(host); root = createRoot(host)
   await act(async () => {
