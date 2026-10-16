@@ -26,8 +26,10 @@ git diff --check
 | `tests/sync.test.ts` | รูปแบบ query ที่กรอง user_id/version และการส่งต่อ error ด้วย Supabase จำลอง ไม่ใช่หลักฐาน RLS จริง |
 | `tests/build-config.test.ts` | กัน mock production build และอนุญาตเฉพาะ environment สาธารณะสองค่า |
 | `tests/settings.test.tsx` | หน้าต่างนำเข้าในแอป การกรอกรหัสผ่านผิด และลองใหม่ โดยไม่เรียก native prompt |
+| `tests/import.test.ts` | Chrome/Bitwarden CSV, quoted fields และ multiline, ไฟล์ผิดรูปแบบ/ขนาดเกิน, เก็บคอลัมน์เพิ่มเติม, รายการซ้ำ และบันทึกผ่าน VaultSession แบบเข้ารหัส |
+| `tests/import-csv.test.tsx` | ดูตัวอย่างโดยไม่แสดงรหัสผ่าน ยืนยันก่อนบันทึก ข้ามรายการซ้ำ ยกเลิก เปลี่ยนไฟล์ และลองใหม่หลังบันทึกล้มเหลว |
 
-รอบล่าสุด: **65 tests ผ่าน** และ TypeScript ผ่านทั้งแอปกับ tests รวม regression tests สำหรับคำสั่งจากรอบตู้เซฟเก่าและกรณีเซิร์ฟเวอร์บันทึกแล้วแต่ client ไม่ได้รับคำตอบ Production build และตรวจ bundle หลังการแก้โค้ดผ่านแล้ว
+ผลการทดสอบอัตโนมัติให้อ้างอิง output ของ `npm test` รอบล่าสุด ตารางด้านบนระบุขอบเขตหลักฐาน การทดสอบ CSV ใช้ข้อมูลสมมติและ save จำลอง ยังไม่ได้ทดสอบการนำเข้า CSV บน Supabase จริงหรือไฟล์ส่วนตัวของผู้ใช้
 
 ตรวจ production preview บนเครื่องแล้วเปิดหน้าเข้าสู่ระบบได้ โดยไม่ได้ส่งข้อมูลล็อกอินไปยังบริการจริง `npm audit --omit=dev` ไม่พบช่องโหว่ที่รายงานใน dependency สำหรับ production ณ รอบตรวจนี้
 
