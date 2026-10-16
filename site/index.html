@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ตู้เซฟรหัสผ่าน</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<main>
+  <h1>🔐 ตู้เซฟรหัสผ่าน</h1>
+  <div class="muted">เข้ารหัสด้วย AES-256-GCM + PBKDF2-SHA256 (600,000 รอบ) ในเบราว์เซอร์ก่อนส่งขึ้น Supabase เซิร์ฟเวอร์เห็นแค่ข้อมูลที่เข้ารหัสแล้ว</div>
+
+  <!-- Account (Supabase Auth) -->
+  <section id="authView" class="card hidden">
+    <h2 style="font-size:17px;margin:0">เข้าสู่ระบบบัญชี</h2>
+    <form id="authForm">
+      <label for="email">อีเมล</label>
+      <input id="email" type="email" autocomplete="username" required>
+      <label for="loginPw">รหัสผ่านบัญชี (ใช้ล็อกอิน ไม่ใช่รหัสผ่านหลัก)</label>
+      <input id="loginPw" type="password" autocomplete="current-password" required minlength="8">
+      <div class="row" style="margin-top:14px">
+        <button class="primary" value="signin">เข้าสู่ระบบ</button>
+        <button value="signup">สมัครสมาชิก</button>
+      </div>
+      <div id="authMsg" class="msg"></div>
+    </form>
+  </section>
+
+  <!-- Setup / unlock -->
+  <section id="lockView" class="card hidden">
+    <div class="row">
+      <h2 id="lockTitle" class="grow" style="font-size:17px;margin:0">ปลดล็อกตู้เซฟ</h2>
+      <span class="muted" id="whoami"></span>
+      <button id="signOutBtn" type="button">ออกจากระบบ</button>
+    </div>
+    <form id="lockForm">
+      <label for="master">รหัสผ่านหลัก (Master password)</label>
+      <input id="master" type="password" autocomplete="current-password" required>
+      <div id="confirmWrap" class="hidden">
+        <label for="master2">ยืนยันรหัสผ่านหลัก</label>
+        <input id="master2" type="password" autocomplete="new-password">
+        <div class="meter"><div id="masterMeter"></div></div>
+        <div class="muted" style="margin-top:6px">⚠️ ถ้าลืมรหัสผ่านหลัก จะกู้ข้อมูลคืนไม่ได้เลย (Supabase ก็ช่วยไม่ได้)</div>
+      </div>
+      <div class="row" style="margin-top:14px">
+        <button id="lockBtn" class="primary" type="submit">ปลดล็อก</button>
+        <button id="importLockedBtn" type="button">นำเข้าไฟล์สำรอง</button>
+      </div>
+      <div id="lockMsg" class="msg"></div>
+    </form>
+  </section>
+
+  <!-- Vault -->
+  <section id="vaultView" class="hidden">
+    <div class="card">
+      <div class="row">
+        <input id="search" class="grow" type="search" placeholder="ค้นหา…">
+        <button id="addBtn" class="primary">+ เพิ่ม</button>
+        <button id="lockNowBtn">ล็อก</button>
+      </div>
+      <div class="row muted" style="margin-top:10px">
+        <span class="grow" id="count"></span>
+        <button id="exportBtn">ส่งออก (เข้ารหัส)</button>
+        <button id="importBtn">นำเข้า</button>
+        <button id="changeMasterBtn">เปลี่ยนรหัสหลัก</button>
+      </div>
+    </div>
+    <div class="card"><div id="list"></div></div>
+    <div class="muted" style="margin-top:10px">ล็อกอัตโนมัติเมื่อไม่ได้ใช้งาน 5 นาที · คลิปบอร์ดจะถูกล้างหลังคัดลอก 30 วินาที</div>
+  </section>
+
+  <section id="configError" class="card hidden">
+    <b>ยังไม่ได้ตั้งค่า Supabase</b>
+    <div class="muted">ตั้ง SUPABASE_URL และ SUPABASE_ANON_KEY แล้วรัน <code>npm run build</code> (ดู README)</div>
+  </section>
+</main>
+
+<dialog id="editDlg">
+  <form id="editForm" method="dialog">
+    <h2 id="editTitle" style="font-size:17px;margin:0">เพิ่มรายการ</h2>
+    <label for="fTitle">ชื่อ / เว็บไซต์</label>
+    <input id="fTitle" required>
+    <label for="fUser">ชื่อผู้ใช้ / อีเมล</label>
+    <input id="fUser" autocomplete="off">
+    <label for="fPass">รหัสผ่าน</label>
+    <div class="row">
+      <input id="fPass" class="grow" type="password" autocomplete="new-password">
+      <button type="button" id="togglePass">👁</button>
+      <button type="button" id="genBtn">สุ่ม</button>
+    </div>
+    <div class="meter"><div id="passMeter"></div></div>
+    <div class="row muted" style="margin-top:8px">
+      ความยาว <input id="genLen" type="number" min="8" max="128" value="20" style="width:70px">
+      <label style="margin:0"><input id="genSym" type="checkbox" checked style="width:auto"> สัญลักษณ์</label>
+    </div>
+    <label for="fUrl">URL</label>
+    <input id="fUrl" type="url" placeholder="https://">
+    <label for="fNotes">บันทึก</label>
+    <textarea id="fNotes"></textarea>
+    <div class="row" style="margin-top:16px">
+      <button class="primary" value="save">บันทึก</button>
+      <button value="cancel" formnovalidate>ยกเลิก</button>
+      <span class="grow"></span>
+      <button id="delBtn" type="button" class="danger">ลบ</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="masterDlg">
+  <form id="masterForm" method="dialog">
+    <h2 style="font-size:17px;margin:0">เปลี่ยนรหัสผ่านหลัก</h2>
+    <label for="oldM">รหัสเดิม</label><input id="oldM" type="password" autocomplete="current-password">
+    <label for="newM">รหัสใหม่</label><input id="newM" type="password" autocomplete="new-password">
+    <label for="newM2">ยืนยันรหัสใหม่</label><input id="newM2" type="password" autocomplete="new-password">
+    <div id="masterMsg" class="msg"></div>
+    <div class="row" style="margin-top:12px">
+      <button class="primary" value="save">เปลี่ยน</button>
+      <button value="cancel" formnovalidate>ยกเลิก</button>
+    </div>
+  </form>
+</dialog>
+
+<input id="fileIn" type="file" accept=".json,application/json" class="hidden">
+<div id="toast"></div>
+
+<script src="config.js"></script>
+<script src="vendor/supabase.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

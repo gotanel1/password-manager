@@ -1,0 +1,31 @@
+:root { --bg:#f6f7f9; --card:#fff; --text:#1b1f24; --muted:#667085; --line:#e3e6ea; --accent:#2f6fed; --danger:#d92d20; --ok:#12805c; }
+@media (prefers-color-scheme: dark) { :root { --bg:#111418; --card:#1a1f25; --text:#e8eaed; --muted:#9aa4b2; --line:#2b323b; --accent:#5b8cff; --danger:#ff6b5e; --ok:#3ccf91; } }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--text); font:15px/1.5 system-ui, "Segoe UI", "Noto Sans Thai", sans-serif; }
+main { max-width:760px; margin:0 auto; padding:24px 16px 64px; }
+h1 { font-size:22px; margin:0 0 4px; }
+.muted { color:var(--muted); font-size:13px; }
+.card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; margin-top:16px; }
+input, textarea { width:100%; padding:9px 11px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--text); font:inherit; }
+textarea { min-height:60px; resize:vertical; }
+label { display:block; font-size:13px; color:var(--muted); margin:10px 0 4px; }
+button { padding:8px 14px; border:1px solid var(--line); border-radius:8px; background:var(--card); color:var(--text); font:inherit; cursor:pointer; }
+button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+button.danger { color:var(--danger); }
+button:disabled { opacity:.5; cursor:default; }
+.row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+.grow { flex:1; min-width:0; }
+.hidden { display:none !important; }
+.entry { display:flex; gap:12px; align-items:center; padding:12px 0; border-top:1px solid var(--line); }
+.entry:first-child { border-top:0; }
+.entry .title { font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.entry .sub { color:var(--muted); font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.entry button { padding:6px 10px; font-size:13px; }
+.msg { min-height:20px; font-size:13px; margin-top:8px; }
+.msg.err { color:var(--danger); } .msg.ok { color:var(--ok); }
+.meter { height:6px; border-radius:3px; background:var(--line); margin-top:6px; overflow:hidden; }
+.meter > div { height:100%; width:0; transition:width .2s; }
+dialog { border:1px solid var(--line); border-radius:12px; background:var(--card); color:var(--text); width:min(520px, calc(100vw - 32px)); padding:20px; }
+dialog::backdrop { background:rgba(0,0,0,.45); }
+#toast { position:fixed; left:50%; bottom:20px; transform:translateX(-50%); background:var(--text); color:var(--bg); padding:8px 14px; border-radius:8px; font-size:13px; opacity:0; transition:opacity .2s; pointer-events:none; }
+#toast.show { opacity:1; }

@@ -1,0 +1,12 @@
+{
+  "name": "password-manager",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "dev": "node scripts/build.mjs && npx --yes http-server@14.1.1 site -a 127.0.0.1 -p 8765 -c-1"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "2.117.2"
+  }
+}
