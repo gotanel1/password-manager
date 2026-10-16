@@ -35,6 +35,12 @@ async function fillPassword(value: string) {
 async function submit() {
   await act(async () => { host.querySelector('[role="dialog"] form')!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })) })
 }
+it("opens CSV import from settings without requesting a backup password", async () => {
+  await act(async () => { [...host.querySelectorAll("button")].find((b) => b.textContent === "นำเข้า CSV")!.click() })
+  expect(host.querySelector('[role="dialog"]')!.getAttribute("aria-label")).toBe("นำเข้าจาก Chrome / Bitwarden")
+  expect(host.querySelector('[role="dialog"] input[type="password"]')).toBeNull()
+  expect(api.update).not.toHaveBeenCalled()
+})
 it("imports through an in-app password dialog without native prompt", async () => {
   await chooseFile()
   expect(host.querySelector('[role="dialog"]')).not.toBeNull()

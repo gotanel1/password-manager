@@ -10,6 +10,7 @@ import { RecoveryCodeCard } from "./access"
 import { ago, type Issue } from "./lib/model"
 import { passphrase, pin, randomPassword, strength } from "./lib/password"
 import type { Prefs } from "./lib/prefs"
+import { ImportCsvModal } from "./ImportCsvModal"
 
 const MODES = ["สุ่มรหัสผ่าน", "วลีรหัสผ่าน", "รหัส PIN"] as const
 type Mode = (typeof MODES)[number]
@@ -190,6 +191,7 @@ export function SettingsPage() {
   const [newCode, setNewCode] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [importing, setImporting] = useState<File | null>(null)
+  const [importingCsv, setImportingCsv] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
   const set = (p: Partial<Prefs>) => setPrefs({ ...prefs, ...p })
   const go = (id: string) => { setActive(id); document.getElementById(`settings-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" }) }
@@ -260,7 +262,9 @@ export function SettingsPage() {
                 setImporting(f)
               }} />
             </SettingsRow>
-            <SettingsRow title="นำเข้าจาก Chrome, Bitwarden หรือ CSV" description="ย้ายรหัสผ่านจากโปรแกรมอื่น"><Soon /></SettingsRow>
+            <SettingsRow title="นำเข้าจาก Chrome หรือ Bitwarden" description="ดูตัวอย่างจากไฟล์ CSV และข้ามรายการซ้ำก่อนบันทึก">
+              <Button icon={<Upload size={16} />} onClick={() => setImportingCsv(true)}>นำเข้า CSV</Button>
+            </SettingsRow>
           </SettingsSection>
 
           <SettingsSection id="settings-appearance" title="รูปลักษณ์" description="เลือกรูปแบบที่สบายตาสำหรับคุณ">
@@ -301,6 +305,7 @@ export function SettingsPage() {
         </Modal>
       )}
       {importing && <ImportBackupModal file={importing} close={() => setImporting(null)} />}
+      {importingCsv && <ImportCsvModal close={() => setImportingCsv(false)} />}
       {deleting && (
         <Modal eyebrow="โซนอันตราย" title="ลบข้อมูลตู้เซฟ" onClose={() => setDeleting(false)}>
           <DeleteVaultForm email={email} onConfirm={deleteVault} close={() => setDeleting(false)} />
