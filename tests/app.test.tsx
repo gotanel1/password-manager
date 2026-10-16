@@ -17,6 +17,7 @@ const h = vi.hoisted(() => ({
   complete: null as null | (() => void),
   legacy: null as null | ((email: string, password: string) => void),
   upgrade: null as null | ((accountPw: string, oldMaster: string, newMaster?: string) => Promise<string | null>),
+  recover: null as null | ((code: string, password: string) => Promise<string | null>),
   api: null as VaultApi | null,
 }))
 vi.mock("../src/lib/sync", async (original) => ({
@@ -29,7 +30,7 @@ vi.mock("../src/access", async (original) => ({
   masterChecks: (await original<typeof import("../src/access")>()).masterChecks,
   initials: () => "T",
   AuthScreen: ({ onLegacy }: { onLegacy: typeof h.legacy }) => { h.legacy = onLegacy; return <p>auth screen</p> },
-  EmailConfirmation: () => <p>email screen</p>, ForgotScreen: () => <p>forgot screen</p>, RecoverScreen: () => <p>recover screen</p>,
+  EmailConfirmation: () => <p>email screen</p>, ForgotScreen: () => <p>forgot screen</p>, RecoverScreen: ({ onRecover }: { onRecover: typeof h.recover }) => { h.recover = onRecover; return <p>recover screen</p> },
   LegacyScreen: ({ onUpgrade }: { onUpgrade: typeof h.upgrade }) => { h.upgrade = onUpgrade; return <p>legacy screen</p> },
   UnlockScreen: ({ onUnlock }: { onUnlock: typeof h.unlock }) => { h.unlock = onUnlock; return <p>locked screen</p> },
   SetupScreen: ({ onCreate }: { onCreate: typeof h.create }) => { h.create = onCreate; return <p>setup screen</p> },
@@ -64,14 +65,14 @@ beforeEach(async () => {
   vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false, addEventListener() {}, removeEventListener() {} })))
   vi.clearAllMocks()
   localStorage.clear()
-  h.unlock = null; h.create = null; h.complete = null; h.api = null; h.legacy = null; h.upgrade = null
+  h.unlock = null; h.create = null; h.complete = null; h.api = null; h.legacy = null; h.upgrade = null; h.recover = null
   h.copy.mockResolvedValue(undefined)
   stored = { blob: await v2(password, user.email), version: 1 }
   h.setLogin.mockResolvedValue(undefined)
   h.signIn.mockImplementation(async () => ({ data: { user, session: { user } }, error: null }))
   h.fetch.mockImplementation(async () => stored)
   h.save.mockImplementation(async (_user, remote, blob) => { stored = { blob, version: (remote?.version ?? 0) + 1 }; return stored })
-  h.signOut.mockImplementation(async () => { h.auth!("SIGNED_OUT", null); return { error: null } })
+  h.signOut.mockImplementation(async (options?: { scope?: string }) => { if (options?.scope !== "others") h.auth!("SIGNED_OUT", null); return { error: null } })
   host = document.createElement("div"); document.body.append(host)
   root = createRoot(host)
   await act(async () => { root.render(<App />) })
@@ -251,8 +252,46 @@ describe("App vault integration", () => {
     expect(result).toBe("รหัสผ่านหลักเดิมไม่ถูกต้อง")
     expect(h.save).not.toHaveBeenCalled()
     expect(h.setLogin).not.toHaveBeenCalled()
+    expect(h.signOut).not.toHaveBeenCalled()
     expect(host.textContent).not.toContain("บันทึกไม่สำเร็จ")
     expect(host.textContent).toContain("settings screen")
+  })
+  it("signs out other sessions once a master password change has moved the login", async () => {
+    await unlock()
+    const next = "Next-test!Master-2026"
+    let result: string | null = "unset"
+    await act(async () => { result = await h.api!.changeMaster(password, next) })
+    expect(result).toBeNull()
+    expect(h.signOut).toHaveBeenCalledExactlyOnceWith({ scope: "others" })
+    expect(h.setLogin.mock.invocationCallOrder[0]).toBeLessThan(h.signOut.mock.invocationCallOrder[0])
+    expect(host.textContent).toContain("settings screen")
+    expect(await openAny(stored!.blob, next)).toMatchObject({ items: [] })
+  })
+  it("keeps a finished password change when signing out other sessions fails, and says so", async () => {
+    await unlock()
+    h.signOut.mockResolvedValueOnce({ error: new Error("offline") })
+    let result: string | null = "unset"
+    await act(async () => { result = await h.api!.changeMaster(password, "Next-test!Master-2026") })
+    expect(result).toBeNull()
+    expect(host.textContent).toContain("ออกจากระบบอุปกรณ์อื่นไม่สำเร็จ")
+    expect(host.textContent).toContain("settings screen")
+  })
+  it("signs out other sessions after recovering the vault, but not when the recovery code is wrong", async () => {
+    const code = newRecoveryCode()
+    const vaultKey = await newVaultKey()
+    stored = { blob: await sealV2(await newHeader(vaultKey, await deriveForEmail(password, user.email), code), vaultKey, emptyVault()), version: 1 }
+    await act(async () => { h.auth!("PASSWORD_RECOVERY", { user }); await new Promise((r) => setTimeout(r, 0)) })
+    expect(host.textContent).toContain("recover screen")
+    let result: string | null = null
+    await act(async () => { result = await h.recover!(newRecoveryCode(), "Next-test!Master-2026") })
+    expect(result).toMatch(/รหัสกู้คืนไม่ถูกต้อง/)
+    expect(h.setLogin).not.toHaveBeenCalled()
+    expect(h.signOut).not.toHaveBeenCalled()
+    await act(async () => { result = await h.recover!(code, "Next-test!Master-2026") })
+    expect(result).toBeNull()
+    expect(h.signOut).toHaveBeenCalledExactlyOnceWith({ scope: "others" })
+    expect(h.setLogin.mock.invocationCallOrder[0]).toBeLessThan(h.signOut.mock.invocationCallOrder[0])
+    expect(host.textContent).toMatch(/kit screen/)
   })
   it("asks for a stronger password before upgrading a weak two-password vault", async () => {
     stored = { blob: await seal(await newKey("weak-old-1"), emptyVault()), version: 1 }

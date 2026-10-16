@@ -129,6 +129,13 @@ export default function App() {
     }).catch(() => { if (request === accessRequest.current) { setPhase("unlock"); toast("ออกจากระบบไม่สำเร็จ กรุณาลองอีกครั้ง") } })
   }, [clearVault, toast])
 
+  /** Moves the login, then ends every other session: a stolen refresh token must not outlive the old password. */
+  const moveLogin = async (secret: string) => {
+    await setLoginSecret(secret)
+    const warn = () => toast("เปลี่ยนรหัสผ่านหลักแล้ว แต่ออกจากระบบอุปกรณ์อื่นไม่สำเร็จ กรุณาใช้ “ออกจากระบบทุกอุปกรณ์” ในการตั้งค่า")
+    void sb!.auth.signOut({ scope: "others" }).then(({ error }) => { if (error) warn() }, warn)
+  }
+
   // ---------- persistence ----------
   const saverFor = (owner: User) => (previous: Remote, blob: Parameters<typeof saveVault>[2]) => saveVault(owner, previous, blob)
 
@@ -232,7 +239,7 @@ export default function App() {
     changeMaster: async (oldPw, newPw) => {
       const session = sessionRef.current
       if (!session || !active()) return "กรุณาปลดล็อกตู้เซฟก่อน"
-      try { await session.changeMaster(oldPw, newPw, setLoginSecret); return null } catch (e) {
+      try { await session.changeMaster(oldPw, newPw, moveLogin); return null } catch (e) {
         if (e instanceof WrongPasswordError) return "รหัสผ่านหลักเดิมไม่ถูกต้อง"
         reportSaveError(e, session)
         return "เปลี่ยนรหัสผ่านหลักไม่สำเร็จ ตรวจรหัสผ่านเดิมและการเชื่อมต่อ แล้วปลดล็อกใหม่ก่อนลองอีกครั้ง"
@@ -447,7 +454,7 @@ export default function App() {
           const remote = await fetchVault(owner)
           if (!remote) return "บัญชีนี้ยังไม่มีตู้เซฟ"
           try {
-            const r = await recoverVault(remote, code, password, owner.email ?? "", saverFor(owner), (m) => setLoginSecret(m.login))
+            const r = await recoverVault(remote, code, password, owner.email ?? "", saverFor(owner), (m) => moveLogin(m.login))
             recoveryRef.current = false
             history.replaceState(null, "", location.pathname)
             enter(r, owner, r.recoveryCode, "recovered")
