@@ -12,9 +12,12 @@ import "@fontsource/jetbrains-mono/latin-500.css"
 import "@fontsource/jetbrains-mono/latin-600.css"
 import "./index.css"
 import App from "./App"
+import { ConfirmProvider } from "./ui"
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <App />
+    <ConfirmProvider>
+      <App />
+    </ConfirmProvider>
   </StrictMode>,
 )
