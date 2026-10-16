@@ -16,6 +16,8 @@ export type VaultApi = {
   lock: () => void
   signOut: (everywhere?: boolean) => void
   changeMaster: (oldPassword: string, newPassword: string) => Promise<string | null>
+  /** Issues a new recovery code (the old one stops working); null if it could not be saved. */
+  rotateRecovery: () => Promise<string | null>
   importBackup: (file: File, password: string) => Promise<string>
   exportBackup: () => void
   deleteVault: () => Promise<void>

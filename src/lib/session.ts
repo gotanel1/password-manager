@@ -1,4 +1,7 @@
-import { newKey, seal, unseal, type Envelope, type Key } from "./crypto"
+import { unb64 } from "./crypto"
+import {
+  deriveMasterKeys, newRecoveryCode, recoveryWrapKey, sealV2, unlockWithMaster, wrap, type EnvelopeV2, type Header,
+} from "./keys"
 import type { VaultData } from "./model"
 import { ConflictError, type Remote } from "./sync"
 
@@ -16,10 +19,11 @@ export class VaultSession {
   get hasError() { return this.error !== null }
 
   constructor(
-    private key: Key | null,
+    private vaultKey: CryptoKey | null,
+    private header: Header,
     public data: VaultData,
     private remote: Stored,
-    private save: (remote: Stored, blob: Envelope) => Promise<Stored>,
+    private save: (remote: Stored, blob: EnvelopeV2) => Promise<Stored>,
     private changed: (data: VaultData) => void = () => {},
     private status: (state: SyncState) => void = () => {},
   ) {}
@@ -43,26 +47,55 @@ export class VaultSession {
     return run
   }
 
+  /** Writes `header` + `data` and only adopts them once the server confirms. */
+  private async commit(header: Header, data: VaultData) {
+    this.remote = await this.save(this.remote, await sealV2(header, this.vaultKey!, data))
+    this.header = header
+    this.error = null
+  }
+
   update(fn: (data: VaultData) => VaultData) {
     return this.enqueue(async () => {
       const next = fn(this.data)
-      const remote = await this.save(this.remote, await seal(this.key!, next))
-      this.remote = remote
+      await this.commit(this.header, next)
       this.data = next
-      this.error = null
       this.changed(next)
     })
   }
 
-  changeMaster(oldPassword: string, newPassword: string) {
+  /**
+   * Re-wraps the vault key for a new master password and moves the login to the new secret.
+   * The vault is written first with both old and new slots, so whichever password the server
+   * ends up accepting can still open it; the old slot is dropped once the login change succeeds.
+   */
+  changeMaster(oldPassword: string, newPassword: string, setLogin: (secret: string) => Promise<void>) {
     return this.enqueue(async () => {
-      await unseal(this.remote.blob, oldPassword)
-      const key = await newKey(newPassword)
-      const remote = await this.save(this.remote, await seal(key, this.data))
-      // Only swap keys after the server confirms the write.
-      this.key = key
-      this.remote = remote
-      this.error = null
+      const salt = unb64(this.header.salt)
+      const oldM = await deriveMasterKeys(oldPassword, salt)
+      await unlockWithMaster(this.header, oldM) // throws on a wrong old password, before any write
+      const newM = await deriveMasterKeys(newPassword, salt)
+      const vk = this.vaultKey!
+      const { masterPrev: _drop, ...slots } = this.header.keys
+      const both: Header = { ...this.header, keys: { ...slots, master: await wrap(vk, newM.wrap), masterPrev: await wrap(vk, oldM.wrap) } }
+      await this.commit(both, this.data)
+      try {
+        await setLogin(newM.login)
+      } catch (e) {
+        // Login still uses the old password: point the vault back at it.
+        await this.commit({ ...both, keys: { ...slots, master: await wrap(vk, oldM.wrap) } }, this.data).catch(() => {})
+        throw e
+      }
+      // Best effort: if this fails the extra slot is harmless and is cleared on the next change.
+      await this.commit({ ...both, keys: { ...slots, master: both.keys.master } }, this.data).catch(() => {})
+    })
+  }
+
+  /** Replaces the recovery code; the old one stops working once this is saved. */
+  rotateRecovery() {
+    return this.enqueue(async () => {
+      const code = newRecoveryCode()
+      await this.commit({ ...this.header, keys: { ...this.header.keys, recovery: await wrap(this.vaultKey!, await recoveryWrapKey(code)) } }, this.data)
+      return code
     })
   }
 
@@ -77,7 +110,7 @@ export class VaultSession {
     this.closing = true
     // Hide the UI immediately; finish already admitted operations with their own key/account.
     return this.tail.then(() => {
-      this.key = null
+      this.vaultKey = null
       this.data = { v: 2, items: [], folders: [], generatorHistory: [] }
     })
   }

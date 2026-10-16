@@ -1,41 +1,54 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX, type RefObject } from "react"
 import { type LucideIcon, Check, ChevronDown, Lock, LogOut, Moon, MoreHorizontal, Plus, Search, Settings, ShieldCheck, Sun, Vault, WandSparkles, X } from "lucide-react"
-import { AuthScreen, EmailConfirmation, OnboardingScreen, UnlockScreen, initials } from "./access"
+import { AuthScreen, EmailConfirmation, ForgotScreen, KitScreen, LegacyScreen, RecoverScreen, SetupScreen, UnlockScreen, initials, masterChecks } from "./access"
 import { Badge, Brand, Button, IconButton, SidebarItem } from "./ui"
 import { Detail, FolderModal, ItemEditor, ItemRow, Sidebar, TypePicker, applyFilter, filterTitle, type Filter } from "./vault"
 import { Generator, SecurityPage, SettingsPage } from "./pages"
 import { VaultContext, useVault, type VaultApi } from "./state"
-import { isEnvelope, newKey, seal, unseal, type Key } from "./lib/crypto"
+import { isEnvelope, unb64, unseal } from "./lib/crypto"
+import { deriveForEmail, deriveMasterKeys, isEnvelopeV2, openV2, unlockWithMaster, type MasterKeys } from "./lib/keys"
+import { NoRecoveryError, WrongPasswordError, createVault, openVault, recoverVault, upgradeVault, type Opened } from "./lib/vaultkeys"
 import { VaultSession, type SyncState } from "./lib/session"
 import { analyze, emptyVault, migrate, newItem, type Item, type ItemType, type VaultData } from "./lib/model"
 import { copyText, download, loadPrefs, savePrefs, type Prefs } from "./lib/prefs"
-import { ConflictError, deleteVault, fetchVault, saveVault, sb, type Remote, type User } from "./lib/sync"
+import { ConflictError, deleteVault, fetchVault, requestRecovery, saveVault, sb, setLoginSecret, type Remote, type User } from "./lib/sync"
 
-type Phase = "loading" | "config" | "auth" | "email" | "onboarding" | "unlock" | "app"
+type Phase = "loading" | "config" | "auth" | "email" | "forgot" | "legacy" | "setup" | "kit" | "unlock" | "recover" | "app"
 type Page = "vault" | "generator" | "security" | "settings"
+type Kit = { code: string; reason: "new" | "upgraded" | "recovered" }
+/** Upgrade context: what we already know about the old (two-password) account. */
+type Legacy = { email: string; signedIn: boolean; prefillOld?: string; presetOld?: string; presetNew?: string }
 
 const authError = (msg: string) =>
-  /invalid login/i.test(msg) ? "อีเมลหรือรหัสผ่านบัญชีไม่ถูกต้อง"
+  /invalid login/i.test(msg) ? "อีเมลหรือรหัสผ่านหลักไม่ถูกต้อง"
     : /not confirmed/i.test(msg) ? "ยังไม่ได้ยืนยันอีเมล กรุณากดลิงก์ในอีเมลก่อน"
     : /already registered/i.test(msg) ? "อีเมลนี้มีบัญชีอยู่แล้ว ลองเข้าสู่ระบบ"
     : /rate limit/i.test(msg) ? "ส่งคำขอบ่อยเกินไป กรุณารอสักครู่แล้วลองใหม่"
     : /fetch/i.test(msg) ? "เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ ตรวจสอบอินเทอร์เน็ต"
     : msg
 
+// A "forgot password" e-mail link lands here with type=recovery; remember it before the client
+// consumes the URL fragment.
+const openedFromRecoveryLink = typeof location !== "undefined" && /type=recovery/.test(location.hash)
+
 export default function App() {
   const [phase, setPhase] = useState<Phase>(sb ? "loading" : "config")
   const [user, setUser] = useState<User | null>(null)
   const [pendingEmail, setPendingEmail] = useState("")
+  const [kit, setKit] = useState<Kit | null>(null)
+  const [legacy, setLegacy] = useState<Legacy | null>(null)
   const [data, setData] = useState<VaultData>(emptyVault)
   const [prefs, setPrefsState] = useState<Prefs>(loadPrefs)
   const [sync, setSync] = useState<SyncState>("saved")
   const [toastMsg, setToastMsg] = useState("")
   const toastTimer = useRef<number | undefined>(undefined)
-  const remoteRef = useRef<Remote>(null)
   const sessionRef = useRef<VaultSession | null>(null)
   const draining = useRef<Promise<void>>(Promise.resolve())
   const accessRequest = useRef(0)
   const userRef = useRef<User | null>(null)
+  /** While a sign-in handler drives the next screen, the auth listener must not race it. */
+  const flowRef = useRef(false)
+  const recoveryRef = useRef(openedFromRecoveryLink)
 
   const toast = useCallback((m: string) => {
     setToastMsg(m)
@@ -51,18 +64,18 @@ export default function App() {
     if (session) draining.current = Promise.all([draining.current, session.close()]).then(() => {
       if (session.hasError) toast("มีงานที่ทำไม่สำเร็จก่อนล็อก กรุณาตรวจข้อมูลล่าสุดหลังปลดล็อก")
     })
-    remoteRef.current = null
     setData(emptyVault())
   }, [toast])
+
   const enterLocked = useCallback(async (u: User) => {
     const request = ++accessRequest.current
+    if (recoveryRef.current) { setPhase("recover"); return }
     setPhase("unlock")
     try {
       await draining.current
       const remote = await fetchVault(u)
       if (request !== accessRequest.current || userRef.current?.id !== u.id) return
-      remoteRef.current = remote
-      setPhase(remote ? "unlock" : "onboarding")
+      setPhase(remote ? "unlock" : "setup")
     } catch (e) {
       if (request !== accessRequest.current) return
       setSync("error")
@@ -75,9 +88,11 @@ export default function App() {
     if (!sb) return
     const { data: sub } = sb.auth.onAuthStateChange((event, session) => {
       const next = session?.user ?? null
-      if (event !== "INITIAL_SESSION" && next?.id === userRef.current?.id) return // token refresh
+      if (event === "PASSWORD_RECOVERY") recoveryRef.current = true
+      if (event !== "INITIAL_SESSION" && event !== "PASSWORD_RECOVERY" && next?.id === userRef.current?.id) return // token refresh
       userRef.current = next
       setUser(next)
+      if (flowRef.current && next) return
       clearVault()
       // Supabase advises against awaiting other client calls inside this callback.
       const request = accessRequest.current
@@ -104,6 +119,7 @@ export default function App() {
 
   const signOut = useCallback((everywhere = false) => {
     clearVault()
+    recoveryRef.current = false
     const request = accessRequest.current
     setPhase("loading")
     void draining.current.then(async () => {
@@ -114,15 +130,46 @@ export default function App() {
   }, [clearVault, toast])
 
   // ---------- persistence ----------
-  const openSession = (key: Key, next: VaultData, remote: NonNullable<Remote>, owner: User) => {
-    const session = new VaultSession(key, next, remote,
+  const saverFor = (owner: User) => (previous: Remote, blob: Parameters<typeof saveVault>[2]) => saveVault(owner, previous, blob)
+
+  const openSession = (o: Opened, owner: User) => {
+    const session = new VaultSession(o.vaultKey, o.header, o.data, o.remote,
       (previous, blob) => saveVault(owner, previous, blob),
       (committed) => { if (sessionRef.current === session) setData(committed) },
       (state) => { if (sessionRef.current === session) setSync(state) },
     )
     sessionRef.current = session
-    setData(next)
+    setData(o.data)
     setSync("saved")
+  }
+
+  /** Opens `o` and either goes straight in or first shows a new recovery code. */
+  const enter = (o: Opened, owner: User, code?: string, reason: Kit["reason"] = "new") => {
+    openSession(o, owner)
+    if (code) { setKit({ code, reason }); setPhase("kit") } else setPhase("app")
+  }
+
+  /**
+   * Signed in with the derived login secret: open (or create, or finish upgrading) the vault
+   * without asking for the master password a second time.
+   */
+  const openAfterSignIn = async (u: User, password: string, master: MasterKeys): Promise<string | null> => {
+    const save = saverFor(u)
+    const remote = await fetchVault(u)
+    if (!remote) { const c = await createVault(master, save); enter(c, u, c.recoveryCode, "new"); return null }
+    let r: Awaited<ReturnType<typeof openVault>>
+    try { r = await openVault(remote, password) } catch (e) {
+      if (e instanceof WrongPasswordError && isEnvelope(remote.blob) && !isEnvelopeV2(remote.blob)) {
+        // The login already moved to this password but the vault is still under the old one.
+        setLegacy({ email: u.email ?? "", signedIn: true, presetNew: password }); setPhase("legacy")
+        return null
+      }
+      throw e
+    }
+    if (!r.legacy) { enter(r, u); return null }
+    const up = await upgradeVault(r.data, remote, master, save)
+    enter(up, u, up.recoveryCode, "upgraded")
+    return null
   }
 
   const reportSaveError = (e: unknown, session: VaultSession) => {
@@ -185,10 +232,15 @@ export default function App() {
     changeMaster: async (oldPw, newPw) => {
       const session = sessionRef.current
       if (!session || !active()) return "กรุณาปลดล็อกตู้เซฟก่อน"
-      try { await session.changeMaster(oldPw, newPw); return null } catch (e) {
+      try { await session.changeMaster(oldPw, newPw, setLoginSecret); return null } catch (e) {
         reportSaveError(e, session)
         return "เปลี่ยนรหัสผ่านหลักไม่สำเร็จ ตรวจรหัสผ่านเดิมและการเชื่อมต่อ แล้วปลดล็อกใหม่ก่อนลองอีกครั้ง"
       }
+    },
+    rotateRecovery: async () => {
+      const session = sessionRef.current
+      if (!session || !active()) return null
+      try { return await session.rotateRecovery() } catch (e) { reportSaveError(e, session); return null }
     },
     exportBackup: () => {
       const session = sessionRef.current
@@ -204,9 +256,14 @@ export default function App() {
       if (!session || !active()) return "กรุณาปลดล็อกตู้เซฟก่อน"
       let blob: unknown
       try { blob = JSON.parse(await file.text()) } catch { return "ไฟล์ไม่ถูกต้อง" }
-      if (!isEnvelope(blob)) return "ไฟล์นี้ไม่ใช่ไฟล์สำรองของตู้เซฟ"
+      if (!isEnvelope(blob) && !isEnvelopeV2(blob)) return "ไฟล์นี้ไม่ใช่ไฟล์สำรองของตู้เซฟ"
       let incoming: VaultData
-      try { incoming = migrate((await unseal(blob, pw)).data) } catch { return "รหัสผ่านไม่ถูกต้อง หรือไฟล์สำรองเสียหาย/ไม่รองรับ" }
+      try {
+        // A backup opens with the master password it was made with, whichever scheme it uses.
+        incoming = migrate(isEnvelopeV2(blob)
+          ? await openV2(blob, await unlockWithMaster(blob, await deriveMasterKeys(pw, unb64(blob.salt))))
+          : (await unseal(blob, pw)).data)
+      } catch { return "รหัสผ่านไม่ถูกต้อง หรือไฟล์สำรองเสียหาย/ไม่รองรับ" }
       if (sessionRef.current !== session) return "ตู้เซฟถูกล็อกแล้ว กรุณาลองใหม่"
       let count = 0
       try {
@@ -229,11 +286,20 @@ export default function App() {
         if (userRef.current?.id !== owner.id) return
         await deleteVault(owner)
         if (userRef.current?.id !== owner.id) return
-        setPhase("onboarding")
+        setPhase("setup")
         toast("ลบข้อมูลตู้เซฟแล้ว")
       } catch (e) { toast("ลบข้อมูลไม่สำเร็จ กรุณาปลดล็อกใหม่แล้วลองอีกครั้ง"); throw e }
     },
   }
+
+  /** Runs a sign-in step that owns navigation until it returns. */
+  const owned = async (fn: () => Promise<string | null>) => {
+    flowRef.current = true
+    try { return await fn() } catch (e) {
+      return e instanceof WrongPasswordError ? "รหัสผ่านหลักไม่ถูกต้อง" : authError((e as Error).message)
+    } finally { flowRef.current = false }
+  }
+  const signedInUser = (u: User | null) => { if (u) { userRef.current = u; setUser(u) }; return u }
 
   // ---------- access screens ----------
   let screen: JSX.Element
@@ -243,14 +309,28 @@ export default function App() {
     screen = (
       <AuthScreen
         initialEmail={pendingEmail}
-        onSubmit={async (mode, email, password) => {
-          const { data: res, error } = mode === "signup"
-            ? await sb!.auth.signUp({ email, password, options: { emailRedirectTo: location.origin } })
-            : await sb!.auth.signInWithPassword({ email, password })
+        onSignIn={(email, password) => owned(async () => {
+          const master = await deriveForEmail(password, email)
+          const { data: res, error } = await sb!.auth.signInWithPassword({ email, password: master.login })
           if (error) return authError(error.message)
-          if (mode === "signup" && !res.session) { setPendingEmail(email); setPhase("email") }
-          return null
-        }}
+          const u = signedInUser(res.user)!
+          try { return await openAfterSignIn(u, password, master) } catch (e) {
+            // Signed in but the vault didn't load: continue from the unlock screen instead of
+            // leaving a live session behind the sign-in form.
+            toast(e instanceof WrongPasswordError ? "รหัสผ่านหลักไม่ถูกต้อง" : "โหลดตู้เซฟไม่สำเร็จ กรุณาปลดล็อกอีกครั้ง")
+            void enterLocked(u)
+            return null
+          }
+        })}
+        onSignUp={(email, password) => owned(async () => {
+          const master = await deriveForEmail(password, email)
+          const { data: res, error } = await sb!.auth.signUp({ email, password: master.login, options: { emailRedirectTo: location.origin } })
+          if (error) return authError(error.message)
+          if (!res.session) { setPendingEmail(email); setPhase("email"); return null }
+          return openAfterSignIn(signedInUser(res.user)!, password, master)
+        })}
+        onForgot={(email) => { setPendingEmail(email); setPhase("forgot") }}
+        onLegacy={(email, password) => { setLegacy({ email, signedIn: false, prefillOld: password }); setPhase("legacy") }}
       />
     )
   else if (phase === "email")
@@ -264,26 +344,116 @@ export default function App() {
         }}
       />
     )
-  else if (phase === "onboarding")
+  else if (phase === "forgot")
     screen = (
-      <OnboardingScreen
+      <ForgotScreen
+        initialEmail={pendingEmail}
+        onBack={() => setPhase("auth")}
+        onSend={async (email) => { try { await requestRecovery(email); return null } catch (e) { return authError((e as Error).message) } }}
+      />
+    )
+  else if (phase === "legacy" && legacy)
+    screen = (
+      <LegacyScreen
+        email={legacy.email}
+        needsAccountPassword={!legacy.signedIn}
+        prefillOld={legacy.prefillOld}
+        presetOld={legacy.presetOld}
+        presetNew={legacy.presetNew}
+        onBack={() => (legacy.signedIn ? signOut() : setPhase("auth"))}
+        onUpgrade={(accountPw, oldMaster, newMaster) => owned(async () => {
+          let u = userRef.current
+          if (!legacy.signedIn) {
+            const { data: res, error } = await sb!.auth.signInWithPassword({ email: legacy.email, password: accountPw })
+            if (error) return /invalid login/i.test(error.message) ? "รหัสผ่านบัญชีเดิมไม่ถูกต้อง" : authError(error.message)
+            u = signedInUser(res.user)
+          }
+          const owner = u!
+          const target = newMaster ?? oldMaster
+          const master = await deriveForEmail(target, owner.email ?? legacy.email)
+          const save = saverFor(owner)
+          const remote = await fetchVault(owner)
+          if (!remote) {
+            await setLoginSecret(master.login)
+            const c = await createVault(master, save)
+            enter(c, owner, c.recoveryCode, "new")
+            return null
+          }
+          // A retry after an interrupted upgrade finds a v2 vault: open it with either password.
+          if (isEnvelopeV2(remote.blob)) {
+            for (const pw of [target, oldMaster]) {
+              try {
+                const r = await openVault(remote, pw)
+                if (r.legacy) break
+                await setLoginSecret(r.master.login)
+                enter(r, owner)
+                return null
+              } catch { /* try the next candidate */ }
+            }
+            return "รหัสผ่านหลักไม่ถูกต้อง"
+          }
+          let r: Awaited<ReturnType<typeof openVault>>
+          try { r = await openVault(remote, oldMaster) } catch { return "รหัสผ่านหลักเดิมไม่ถูกต้อง" }
+          if (!r.legacy) return "รหัสผ่านหลักไม่ถูกต้อง"
+          // Write the upgraded vault first; if the login change then fails, retrying this screen
+          // finds the v2 vault above and only moves the login.
+          const up = await upgradeVault(r.data, remote, master, save)
+          try { await setLoginSecret(master.login) } catch {
+            return "อัปเกรดตู้เซฟแล้ว แต่เปลี่ยนรหัสเข้าสู่ระบบไม่สำเร็จ กรุณากดอัปเกรดอีกครั้ง"
+          }
+          enter(up, owner, up.recoveryCode, "upgraded")
+          return null
+        })}
+      />
+    )
+  else if (phase === "setup")
+    screen = (
+      <SetupScreen
         email={user?.email ?? ""}
-        onCreate={async (master) => {
-          const request = ++accessRequest.current
+        onSignOut={() => signOut()}
+        onCreate={(password) => owned(async () => {
           const owner = userRef.current!
+          const master = await deriveForEmail(password, owner.email ?? "")
+          // Prove this is the password the account was created with before locking data to it.
+          const { error } = await sb!.auth.signInWithPassword({ email: owner.email ?? "", password: master.login })
+          if (error) return /invalid login/i.test(error.message) ? "รหัสผ่านหลักไม่ตรงกับที่ใช้สมัคร" : authError(error.message)
+          await draining.current
+          const c = await createVault(master, saverFor(owner))
+          enter(c, owner, c.recoveryCode, "new")
+          return null
+        })}
+      />
+    )
+  else if (phase === "kit" && kit)
+    screen = (
+      <KitScreen
+        email={user?.email ?? ""}
+        code={kit.code}
+        reason={kit.reason}
+        onCopy={(code) => void copyText(code, prefs.clipboardSec).then(() => toast("คัดลอกรหัสกู้คืนแล้ว"), () => toast("คัดลอกไม่สำเร็จ"))}
+        onDone={() => { setKit(null); setPhase("app") }}
+      />
+    )
+  else if (phase === "recover")
+    screen = (
+      <RecoverScreen
+        email={user?.email ?? ""}
+        onCancel={() => signOut()}
+        onRecover={(code, password) => owned(async () => {
+          const owner = userRef.current!
+          const remote = await fetchVault(owner)
+          if (!remote) return "บัญชีนี้ยังไม่มีตู้เซฟ"
           try {
-            await draining.current
-            const key = await newKey(master)
-            const fresh = emptyVault()
-            const remote = await saveVault(owner, null, await seal(key, fresh))
-            if (request !== accessRequest.current) return "สถานะบัญชีเปลี่ยน กรุณาลองใหม่"
-            openSession(key, fresh, remote, owner)
+            const r = await recoverVault(remote, code, password, owner.email ?? "", saverFor(owner), (m) => setLoginSecret(m.login))
+            recoveryRef.current = false
+            history.replaceState(null, "", location.pathname)
+            enter(r, owner, r.recoveryCode, "recovered")
             return null
           } catch (e) {
-            return "สร้างตู้เซฟไม่สำเร็จ: " + (e as Error).message
+            if (e instanceof NoRecoveryError) return "ตู้เซฟนี้สร้างก่อนมีระบบรหัสกู้คืน จึงกู้ด้วยวิธีนี้ไม่ได้"
+            throw e
           }
-        }}
-        onComplete={() => setPhase("app")}
+        })}
       />
     )
   else if (phase === "unlock")
@@ -300,17 +470,28 @@ export default function App() {
             return "โหลดข้อมูลล่าสุดไม่สำเร็จ ตรวจการเชื่อมต่อแล้วลองอีกครั้ง"
           }
           if (request !== accessRequest.current) return "สถานะบัญชีเปลี่ยน กรุณาลองใหม่"
-          if (!remote) { setPhase("onboarding"); return null }
-          try {
-            const { key, data: raw } = await unseal(remote.blob, password)
-            const next = migrate(raw)
-            if (request !== accessRequest.current) return "สถานะบัญชีเปลี่ยน กรุณาลองใหม่"
-            openSession(key, next, remote, owner)
-            setPhase("app")
-            return null
-          } catch {
+          if (!remote) { setPhase("setup"); return null }
+          let r: Awaited<ReturnType<typeof openVault>>
+          try { r = await openVault(remote, password) } catch {
             return "รหัสผ่านหลักไม่ถูกต้อง หรือข้อมูลตู้เซฟเสียหาย/ไม่รองรับ กรุณาตรวจสอบแล้วลองอีกครั้ง"
           }
+          if (request !== accessRequest.current) return "สถานะบัญชีเปลี่ยน กรุณาลองใหม่"
+          if (!r.legacy) { enter(r, owner); return null }
+          // Signed in from the two-password era: upgrade now. The login moves to this password,
+          // so it has to meet the new strength rules.
+          if (!masterChecks(password, password).ok) {
+            setLegacy({ email: owner.email ?? "", signedIn: true, presetOld: password }); setPhase("legacy")
+            return null
+          }
+          return owned(async () => {
+            const master = await deriveForEmail(password, owner.email ?? "")
+            const up = await upgradeVault(r.data, remote!, master, saverFor(owner))
+            try { await setLoginSecret(master.login) } catch {
+              return "อัปเกรดตู้เซฟแล้ว แต่เปลี่ยนรหัสเข้าสู่ระบบไม่สำเร็จ กรุณาปลดล็อกอีกครั้ง"
+            }
+            enter(up, owner, up.recoveryCode, "upgraded")
+            return null
+          })
         }}
       />
     )

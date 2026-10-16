@@ -44,19 +44,47 @@ export function createClient() {
     return api
   }
 
+  // Accounts: e-mail → password. Passwords are checked, so wrong-password paths are exercised.
+  const users: Record<string, { password: string }> = load("mock.users", {})
+  const persistUsers = () => localStorage.setItem("mock.users", JSON.stringify(users))
+  const userFor = (email: string) => ({ id: "mock-" + email.toLowerCase(), email: email.toLowerCase() })
+  const fail = (message: string) => ({ data: { user: null, session: null }, error: { message } })
+
+  // Simulated "forgot password" e-mail link: /#type=recovery&mock_email=someone@example.test
+  const link = new URLSearchParams(location.hash.slice(1))
+  const recoveryEmail = link.get("type") === "recovery" ? link.get("mock_email") : null
+  if (recoveryEmail && users[recoveryEmail.toLowerCase()]) session = { user: userFor(recoveryEmail) }
+
   return {
     from,
     auth: {
       onAuthStateChange(l: Listener) {
         listeners.push(l)
-        setTimeout(() => l("INITIAL_SESSION", session))
+        setTimeout(() => { l("INITIAL_SESSION", session); if (recoveryEmail && session) l("PASSWORD_RECOVERY", session) })
         return { data: { subscription: { unsubscribe() { listeners.splice(listeners.indexOf(l), 1) } } } }
       },
-      async signInWithPassword({ email }: { email: string }) {
-        setSession({ user: { id: "mock-" + email, email } }, "SIGNED_IN")
-        return { data: { session }, error: null }
+      async signInWithPassword({ email, password }: { email: string; password: string }) {
+        const u = users[email.toLowerCase()]
+        if (!u || u.password !== password) return fail("Invalid login credentials")
+        setSession({ user: userFor(email) }, "SIGNED_IN")
+        return { data: { session, user: session!.user }, error: null }
       },
-      async signUp() { return { data: { session: null, user: null }, error: null } },
+      async signUp({ email, password }: { email: string; password: string }) {
+        if (users[email.toLowerCase()]) return fail("User already registered")
+        users[email.toLowerCase()] = { password }
+        persistUsers()
+        return { data: { session: null, user: null }, error: null } // e-mail confirmation required
+      },
+      async updateUser({ password }: { password: string }) {
+        if (!session) return fail("Auth session missing!")
+        users[session.user.email] = { password }
+        persistUsers()
+        return { data: { user: session.user }, error: null }
+      },
+      async resetPasswordForEmail(email: string) {
+        console.info(`[mock] recovery link: ${location.origin}/#type=recovery&mock_email=${encodeURIComponent(email)}`)
+        return { error: null }
+      },
       async resend() { return { error: null } },
       async signOut() { setSession(null, "SIGNED_OUT"); return { error: null } },
     },
