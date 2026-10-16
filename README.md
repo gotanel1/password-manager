@@ -6,7 +6,7 @@
 | ส่วน | หน้าที่ |
 |---|---|
 | `site/` | หน้าเว็บ ไม่มี framework (`index.html`, `app.js`, `app.css`) |
-| `scripts/build.mjs` | คัดลอก supabase-js ไปไว้ที่ `site/vendor/` และสร้าง `site/config.js` จาก env |
+| `scripts/build.mjs` | คัดลอก supabase-js และฟอนต์ (latin + thai) ไปไว้ที่ `site/vendor/` และสร้าง `site/config.js` จาก env |
 | `supabase/migrations/` | ตาราง `vaults` พร้อม RLS (ผู้ใช้เข้าถึงได้เฉพาะแถวของตัวเอง) และ trigger ที่กันการเขียนทับข้อมูลที่ใหม่กว่า |
 | `netlify.toml` | คำสั่ง build, โฟลเดอร์ publish และ security headers (CSP ที่อนุญาตให้คุยกับ `*.supabase.co` เท่านั้น) |
 
