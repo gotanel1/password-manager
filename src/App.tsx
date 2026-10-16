@@ -379,7 +379,7 @@ export default function App() {
             enter(c, owner, c.recoveryCode, "new")
             return null
           }
-          // A retry after an interrupted upgrade finds a v2 vault: open it with either password.
+          // A vault left half-upgraded by an older version is already v2: open it with either password.
           if (isEnvelopeV2(remote.blob)) {
             for (const pw of [target, oldMaster]) {
               try {
@@ -395,11 +395,13 @@ export default function App() {
           let r: Awaited<ReturnType<typeof openVault>>
           try { r = await openVault(remote, oldMaster) } catch { return "รหัสผ่านหลักเดิมไม่ถูกต้อง" }
           if (!r.legacy) return "รหัสผ่านหลักไม่ถูกต้อง"
-          // Write the upgraded vault first; if the login change then fails, retrying this screen
-          // finds the v2 vault above and only moves the login.
-          const up = await upgradeVault(r.data, remote, master, save)
-          try { await setLoginSecret(master.login) } catch {
-            return "อัปเกรดตู้เซฟแล้ว แต่เปลี่ยนรหัสเข้าสู่ระบบไม่สำเร็จ กรุณากดอัปเกรดอีกครั้ง"
+          // Move the login first: if the vault write then fails, it is still the old vault, and a
+          // retry (or a later sign-in) upgrades it and shows the recovery code.
+          await setLoginSecret(master.login)
+          setLegacy({ ...legacy, signedIn: true })
+          let up: Awaited<ReturnType<typeof upgradeVault>>
+          try { up = await upgradeVault(r.data, remote, master, save) } catch {
+            return "เปลี่ยนรหัสเข้าสู่ระบบแล้ว แต่บันทึกตู้เซฟไม่สำเร็จ กรุณากดอัปเกรดอีกครั้ง"
           }
           enter(up, owner, up.recoveryCode, "upgraded")
           return null
@@ -485,9 +487,11 @@ export default function App() {
           }
           return owned(async () => {
             const master = await deriveForEmail(password, owner.email ?? "")
-            const up = await upgradeVault(r.data, remote!, master, saverFor(owner))
-            try { await setLoginSecret(master.login) } catch {
-              return "อัปเกรดตู้เซฟแล้ว แต่เปลี่ยนรหัสเข้าสู่ระบบไม่สำเร็จ กรุณาปลดล็อกอีกครั้ง"
+            // Login first, as in the upgrade screen: a failed vault write leaves the old vault for a retry.
+            await setLoginSecret(master.login)
+            let up: Awaited<ReturnType<typeof upgradeVault>>
+            try { up = await upgradeVault(r.data, remote!, master, saverFor(owner)) } catch {
+              return "เปลี่ยนรหัสเข้าสู่ระบบแล้ว แต่บันทึกตู้เซฟไม่สำเร็จ กรุณาปลดล็อกอีกครั้ง"
             }
             enter(up, owner, up.recoveryCode, "upgraded")
             return null

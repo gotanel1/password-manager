@@ -15,6 +15,8 @@ const h = vi.hoisted(() => ({
   unlock: null as null | ((pw: string) => Promise<string | null>),
   create: null as null | ((pw: string) => Promise<string | null>),
   complete: null as null | (() => void),
+  legacy: null as null | ((email: string, password: string) => void),
+  upgrade: null as null | ((accountPw: string, oldMaster: string, newMaster?: string) => Promise<string | null>),
   api: null as VaultApi | null,
 }))
 vi.mock("../src/lib/sync", async (original) => ({
@@ -26,8 +28,9 @@ vi.mock("../src/lib/prefs", async (original) => ({ ...await original<typeof impo
 vi.mock("../src/access", async (original) => ({
   masterChecks: (await original<typeof import("../src/access")>()).masterChecks,
   initials: () => "T",
-  AuthScreen: () => <p>auth screen</p>, EmailConfirmation: () => <p>email screen</p>,
-  ForgotScreen: () => <p>forgot screen</p>, RecoverScreen: () => <p>recover screen</p>, LegacyScreen: () => <p>legacy screen</p>,
+  AuthScreen: ({ onLegacy }: { onLegacy: typeof h.legacy }) => { h.legacy = onLegacy; return <p>auth screen</p> },
+  EmailConfirmation: () => <p>email screen</p>, ForgotScreen: () => <p>forgot screen</p>, RecoverScreen: () => <p>recover screen</p>,
+  LegacyScreen: ({ onUpgrade }: { onUpgrade: typeof h.upgrade }) => { h.upgrade = onUpgrade; return <p>legacy screen</p> },
   UnlockScreen: ({ onUnlock }: { onUnlock: typeof h.unlock }) => { h.unlock = onUnlock; return <p>locked screen</p> },
   SetupScreen: ({ onCreate }: { onCreate: typeof h.create }) => { h.create = onCreate; return <p>setup screen</p> },
   KitScreen: ({ onDone, code }: { onDone: typeof h.complete; code: string }) => { h.complete = onDone; return <p>kit screen {code}</p> },
@@ -61,7 +64,7 @@ beforeEach(async () => {
   vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false, addEventListener() {}, removeEventListener() {} })))
   vi.clearAllMocks()
   localStorage.clear()
-  h.unlock = null; h.create = null; h.complete = null; h.api = null
+  h.unlock = null; h.create = null; h.complete = null; h.api = null; h.legacy = null; h.upgrade = null
   h.copy.mockResolvedValue(undefined)
   stored = { blob: await v2(password, user.email), version: 1 }
   h.setLogin.mockResolvedValue(undefined)
@@ -204,6 +207,42 @@ describe("App vault integration", () => {
     expect(isEnvelopeV2(stored!.blob)).toBe(true)
     expect(stored!.version).toBe(4)
     expect(await openAny(stored!.blob, password)).toMatchObject({ items: [{ title: "old data" }] })
+  })
+  it("moves the login before upgrading on unlock, so a failed vault write can be retried and still shows the recovery code", async () => {
+    stored = { blob: await seal(await newKey(password), { ...emptyVault(), items: [{ ...newItem("note"), title: "old data" }] }), version: 3 }
+    h.save.mockRejectedValueOnce(new Error("offline"))
+    await act(async () => { expect(await h.unlock!(password)).toMatch(/บันทึกตู้เซฟไม่สำเร็จ/) })
+    expect(h.setLogin).toHaveBeenCalledWith((await deriveForEmail(password, user.email)).login)
+    expect(isEnvelopeV2(stored!.blob)).toBe(false)
+    await act(async () => { expect(await h.unlock!(password)).toBeNull() })
+    expect(host.textContent).toMatch(/kit screen ([A-Z2-9]{5}-){4}[A-Z2-9]{5}/)
+    expect(isEnvelopeV2(stored!.blob)).toBe(true)
+    expect(await openAny(stored!.blob, password)).toMatchObject({ items: [{ title: "old data" }] })
+  })
+  it("leaves a two-password vault untouched when the login change fails during upgrade", async () => {
+    const old = await seal(await newKey(password), emptyVault())
+    stored = { blob: old, version: 3 }
+    h.setLogin.mockRejectedValueOnce(new Error("auth down"))
+    await act(async () => { expect(await h.unlock!(password)).not.toBeNull() })
+    expect(h.save).not.toHaveBeenCalled()
+    expect(stored).toEqual({ blob: old, version: 3 })
+  })
+  it("retries an interrupted upgrade from the upgrade screen without the old account password", async () => {
+    const oldMaster = "Old-test!Master-2026", newMaster = "Next-test!Master-2026"
+    stored = { blob: await seal(await newKey(oldMaster), { ...emptyVault(), items: [{ ...newItem("note"), title: "old data" }] }), version: 2 }
+    await act(async () => { h.auth!("SIGNED_OUT", null); await new Promise((r) => setTimeout(r, 0)) })
+    await act(async () => { h.legacy!(user.email, oldMaster) })
+    expect(host.textContent).toContain("legacy screen")
+    h.save.mockRejectedValueOnce(new Error("offline"))
+    await act(async () => { expect(await h.upgrade!("Old-test!Account-2026", oldMaster, newMaster)).toMatch(/บันทึกตู้เซฟไม่สำเร็จ/) })
+    expect(h.signIn).toHaveBeenCalledTimes(1)
+    expect(h.setLogin).toHaveBeenCalledWith((await deriveForEmail(newMaster, user.email)).login)
+    expect(isEnvelopeV2(stored!.blob)).toBe(false)
+    // The account password is now the new login secret, so the retry must not ask for the old one.
+    await act(async () => { expect(await h.upgrade!("", oldMaster, newMaster)).toBeNull() })
+    expect(h.signIn).toHaveBeenCalledTimes(1)
+    expect(host.textContent).toMatch(/kit screen ([A-Z2-9]{5}-){4}[A-Z2-9]{5}/)
+    expect(await openAny(stored!.blob, newMaster)).toMatchObject({ items: [{ title: "old data" }] })
   })
   it("asks for a stronger password before upgrading a weak two-password vault", async () => {
     stored = { blob: await seal(await newKey("weak-old-1"), emptyVault()), version: 1 }
