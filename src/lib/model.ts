@@ -81,6 +81,7 @@ export const emptyVault = (): VaultData => ({ v: 2, items: [], folders: ["งา
 /** v1 vaults were a flat array of {id,title,user,pass,url,notes,created,updated}. */
 export function migrate(data: unknown): VaultData {
   if (Array.isArray(data)) {
+    if (!data.every((e) => record(e) && ["id", "title", "user", "pass", "url", "notes"].every((k) => e[k] == null || typeof e[k] === "string") && ["created", "updated"].every((k) => e[k] == null || finite(e[k])))) throw new Error("ข้อมูลตู้เซฟเก่าไม่ถูกต้อง")
     const v = emptyVault()
     v.items = data.map((e: Record<string, any>) => ({
       id: String(e.id ?? crypto.randomUUID()),
@@ -96,10 +97,28 @@ export function migrate(data: unknown): VaultData {
       updated: e.updated ?? Date.now(),
       passwordChanged: e.updated ?? e.created,
     }))
+    if (new Set(v.items.map((i) => i.id)).size !== v.items.length) throw new Error("รายการในตู้เซฟมีรหัสซ้ำ")
     return v
   }
+  if (!record(data) || data.v !== 2 || !Array.isArray(data.items) || !data.items.every(validItem) || !strings(data.folders)
+    || (data.generatorHistory !== undefined && (!Array.isArray(data.generatorHistory) || !data.generatorHistory.every((h) => record(h) && typeof h.value === "string" && finite(h.at))))) {
+    throw new Error("ข้อมูลตู้เซฟไม่ถูกต้องหรือไม่รองรับ")
+  }
   const v = data as VaultData
+  if (new Set(v.items.map((i) => i.id)).size !== v.items.length) throw new Error("รายการในตู้เซฟมีรหัสซ้ำ")
   return { ...emptyVault(), ...v, generatorHistory: v.generatorHistory ?? [] }
+}
+
+const record = (value: unknown): value is Record<string, any> => !!value && typeof value === "object" && !Array.isArray(value)
+const finite = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value)
+const strings = (value: unknown): value is string[] => Array.isArray(value) && value.every((v) => typeof v === "string")
+function validItem(i: unknown): i is Item {
+  return record(i) && typeof i.id === "string" && !!i.id && Object.hasOwn(TYPES, i.type)
+    && ["title", "notes", "folder"].every((k) => typeof i[k] === "string")
+    && record(i.fields) && Object.values(i.fields).every((v) => typeof v === "string")
+    && strings(i.tags) && typeof i.favorite === "boolean" && finite(i.created) && finite(i.updated)
+    && (i.deleted === undefined || finite(i.deleted)) && (i.passwordChanged === undefined || finite(i.passwordChanged))
+    && Array.isArray(i.history) && i.history.every((h) => record(h) && typeof h.password === "string" && finite(h.changed))
 }
 
 export function newItem(type: ItemType): Item {

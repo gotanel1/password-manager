@@ -230,7 +230,7 @@ function ItemMenu({ item, onClose }: { item: Item; onClose: () => void }) {
   }, [onClose])
   const set = (patch: Partial<Item>, msg: string) => {
     onClose()
-    void update((d) => ({ ...d, items: d.items.map((i) => (i.id === item.id ? { ...i, ...patch, updated: Date.now() } : i)) })).then(() => toast(msg))
+    void update((d) => ({ ...d, items: d.items.map((i) => (i.id === item.id ? { ...i, ...patch, updated: Date.now() } : i)) })).then(() => toast(msg)).catch(() => {})
   }
   return (
     <div className="menu" ref={ref} role="menu">
@@ -240,7 +240,7 @@ function ItemMenu({ item, onClose }: { item: Item; onClose: () => void }) {
           <button type="button" role="menuitem" className="is-danger" onClick={() => {
             onClose()
             if (confirm(`ลบ "${item.title}" ถาวร? การดำเนินการนี้ย้อนกลับไม่ได้`))
-              void update((d) => ({ ...d, items: d.items.filter((i) => i.id !== item.id) })).then(() => toast("ลบถาวรแล้ว"))
+              void update((d) => ({ ...d, items: d.items.filter((i) => i.id !== item.id) })).then(() => toast("ลบถาวรแล้ว")).catch(() => {})
           }}><Trash2 size={16} /> ลบถาวร</button>
         </>
       ) : (
@@ -271,7 +271,7 @@ export function Detail({ item, onBack, onEdit }: { item?: Item; onBack: () => vo
   }
 
   const warning = item.deleted ? undefined : primaryWarning(analysis.issues.get(item.id))
-  const toggleFav = () => void update((d) => ({ ...d, items: d.items.map((i) => (i.id === item.id ? { ...i, favorite: !i.favorite } : i)) }))
+  const toggleFav = () => void update((d) => ({ ...d, items: d.items.map((i) => (i.id === item.id ? { ...i, favorite: !i.favorite } : i)) })).catch(() => {})
   const fields = TYPES[item.type].fields.filter((f) => f.key !== "totp" && item.fields[f.key])
 
   return (
@@ -544,9 +544,11 @@ export function FolderModal({ close }: { close: () => void }) {
       <form className="editor-form" onSubmit={async (e) => {
         e.preventDefault()
         if (!name.trim() || exists) return
-        await update((d) => ({ ...d, folders: [...d.folders, name.trim()] }))
-        toast(`สร้างโฟลเดอร์ "${name.trim()}" แล้ว`)
-        close()
+        try {
+          await update((d) => ({ ...d, folders: [...d.folders, name.trim()] }))
+          toast(`สร้างโฟลเดอร์ "${name.trim()}" แล้ว`)
+          close()
+        } catch { /* Keep the form open; App reports the failed save. */ }
       }}>
         <label className="master-field">
           <span>ชื่อโฟลเดอร์</span>
