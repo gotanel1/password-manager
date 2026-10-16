@@ -86,7 +86,11 @@ export function createClient() {
         return { error: null }
       },
       async resend() { return { error: null } },
-      async signOut() { setSession(null, "SIGNED_OUT"); return { error: null } },
+      // "others" ends sessions on other devices only; the mock has none, so this one stays signed in.
+      async signOut({ scope }: { scope?: "global" | "local" | "others" } = {}) {
+        if (scope !== "others") setSession(null, "SIGNED_OUT")
+        return { error: null }
+      },
     },
   }
 }
