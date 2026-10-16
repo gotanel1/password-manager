@@ -244,6 +244,16 @@ describe("App vault integration", () => {
     expect(host.textContent).toMatch(/kit screen ([A-Z2-9]{5}-){4}[A-Z2-9]{5}/)
     expect(await openAny(stored!.blob, newMaster)).toMatchObject({ items: [{ title: "old data" }] })
   })
+  it("reports a wrong current password on change without flagging a failed save", async () => {
+    await unlock()
+    let result: string | null = null
+    await act(async () => { result = await h.api!.changeMaster("Wrong-test!Master-2026", "Next-test!Master-2026") })
+    expect(result).toBe("รหัสผ่านหลักเดิมไม่ถูกต้อง")
+    expect(h.save).not.toHaveBeenCalled()
+    expect(h.setLogin).not.toHaveBeenCalled()
+    expect(host.textContent).not.toContain("บันทึกไม่สำเร็จ")
+    expect(host.textContent).toContain("settings screen")
+  })
   it("asks for a stronger password before upgrading a weak two-password vault", async () => {
     stored = { blob: await seal(await newKey("weak-old-1"), emptyVault()), version: 1 }
     await act(async () => { expect(await h.unlock!("weak-old-1")).toBeNull() })

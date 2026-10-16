@@ -3,6 +3,7 @@ import {
   deriveMasterKeys, newRecoveryCode, recoveryWrapKey, sealV2, unlockWithMaster, wrap, type EnvelopeV2, type Header,
 } from "./keys"
 import type { VaultData } from "./model"
+import { WrongPasswordError } from "./vaultkeys"
 import { ConflictError, type Remote } from "./sync"
 
 export type SyncState = "saved" | "saving" | "error"
@@ -36,7 +37,8 @@ export class VaultSession {
       if (this.conflict) throw new ConflictError()
       return operation()
     }).catch((error: unknown) => {
-      this.error = error
+      // A mistyped password changed nothing, so it isn't a failed save.
+      if (!(error instanceof WrongPasswordError)) this.error = error
       if (error instanceof ConflictError) this.conflict = true
       throw error
     }).finally(() => {
@@ -72,7 +74,8 @@ export class VaultSession {
     return this.enqueue(async () => {
       const salt = unb64(this.header.salt)
       const oldM = await deriveMasterKeys(oldPassword, salt)
-      await unlockWithMaster(this.header, oldM) // throws on a wrong old password, before any write
+      // A wrong old password is rejected before any write.
+      await unlockWithMaster(this.header, oldM).catch(() => { throw new WrongPasswordError() })
       const newM = await deriveMasterKeys(newPassword, salt)
       const vk = this.vaultKey!
       const { masterPrev: _drop, ...slots } = this.header.keys

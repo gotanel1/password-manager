@@ -7,7 +7,7 @@ import { Generator, SecurityPage, SettingsPage } from "./pages"
 import { VaultContext, useVault, type VaultApi } from "./state"
 import { isEnvelope, unb64, unseal } from "./lib/crypto"
 import { deriveForEmail, deriveMasterKeys, isEnvelopeV2, openV2, unlockWithMaster, type MasterKeys } from "./lib/keys"
-import { NoRecoveryError, WrongPasswordError, createVault, openVault, recoverVault, upgradeVault, type Opened } from "./lib/vaultkeys"
+import { NoRecoveryError, WrongPasswordError, createVault, isLegacyBlob, openVault, recoverVault, upgradeVault, type Opened } from "./lib/vaultkeys"
 import { VaultSession, type SyncState } from "./lib/session"
 import { analyze, emptyVault, migrate, newItem, type Item, type ItemType, type VaultData } from "./lib/model"
 import { copyText, download, loadPrefs, savePrefs, type Prefs } from "./lib/prefs"
@@ -158,8 +158,8 @@ export default function App() {
     const remote = await fetchVault(u)
     if (!remote) { const c = await createVault(master, save); enter(c, u, c.recoveryCode, "new"); return null }
     let r: Awaited<ReturnType<typeof openVault>>
-    try { r = await openVault(remote, password) } catch (e) {
-      if (e instanceof WrongPasswordError && isEnvelope(remote.blob) && !isEnvelopeV2(remote.blob)) {
+    try { r = await openVault(remote, password, master) } catch (e) {
+      if (e instanceof WrongPasswordError && isLegacyBlob(remote.blob)) {
         // The login already moved to this password but the vault is still under the old one.
         setLegacy({ email: u.email ?? "", signedIn: true, presetNew: password }); setPhase("legacy")
         return null
@@ -233,6 +233,7 @@ export default function App() {
       const session = sessionRef.current
       if (!session || !active()) return "กรุณาปลดล็อกตู้เซฟก่อน"
       try { await session.changeMaster(oldPw, newPw, setLoginSecret); return null } catch (e) {
+        if (e instanceof WrongPasswordError) return "รหัสผ่านหลักเดิมไม่ถูกต้อง"
         reportSaveError(e, session)
         return "เปลี่ยนรหัสผ่านหลักไม่สำเร็จ ตรวจรหัสผ่านเดิมและการเชื่อมต่อ แล้วปลดล็อกใหม่ก่อนลองอีกครั้ง"
       }

@@ -3,6 +3,7 @@ import { deriveForEmail, headerOf, isEnvelopeV2, newHeader, newRecoveryCode, new
 import { emptyVault, newItem } from "../src/lib/model"
 import { VaultSession } from "../src/lib/session"
 import { ConflictError } from "../src/lib/sync"
+import { WrongPasswordError } from "../src/lib/vaultkeys"
 import type { Envelope } from "../src/lib/crypto"
 
 const password = "Test-only!Strong-Master-2026"
@@ -130,9 +131,11 @@ describe("master password change (single password)", () => {
   it("rejects the wrong old password without writing or touching the login", async () => {
     const { session, save } = await setup()
     const setLogin = vi.fn(async () => {})
-    await expect(session.changeMaster("Wrong-test!Master-2026", newPassword, setLogin)).rejects.toThrow()
+    await expect(session.changeMaster("Wrong-test!Master-2026", newPassword, setLogin)).rejects.toBeInstanceOf(WrongPasswordError)
     expect(save).not.toHaveBeenCalled()
     expect(setLogin).not.toHaveBeenCalled()
+    // A typo is not a failed save: the session stays healthy.
+    expect(session.hasError).toBe(false)
   })
 })
 
