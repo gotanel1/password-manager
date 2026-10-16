@@ -4,7 +4,7 @@ import {
   AlertTriangle, Check, ChevronDown, ChevronRight, Clock3, Copy, Download, Fingerprint, KeyRound, Laptop, LogOut, Moon, Network, RefreshCw,
   Settings, Shield, ShieldCheck, Sun, Upload, WandSparkles,
 } from "lucide-react"
-import { Badge, Button, IconButton, Modal, PageTitle, SettingToggle, SettingsRow, SettingsSection, Soon, Toggle } from "./ui"
+import { Badge, Button, IconButton, Modal, PageTitle, SettingToggle, SettingsRow, SettingsSection, Soon, Toggle, useConfirm } from "./ui"
 import { useVault } from "./state"
 import { ago, type Issue } from "./lib/model"
 import { passphrase, pin, randomPassword, strength } from "./lib/password"
@@ -15,6 +15,7 @@ type Mode = (typeof MODES)[number]
 
 export function Generator() {
   const { data, update, copy } = useVault()
+  const confirm = useConfirm()
   const [mode, setMode] = useState<Mode>("สุ่มรหัสผ่าน")
   const [length, setLength] = useState(20)
   const [upper, setUpper] = useState(true)
@@ -88,7 +89,13 @@ export function Generator() {
             </div>
           ))}
           {data.generatorHistory.length > 0 && (
-            <button className="text-action" type="button" onClick={() => void update((d) => ({ ...d, generatorHistory: [] })).catch(() => {})}>ล้างประวัติ</button>
+            <button className="text-action" type="button" onClick={async () => {
+              const ok = await confirm({
+                title: "ล้างประวัติการสร้าง?", tone: "danger", confirmLabel: "ล้างประวัติ",
+                message: `รหัสผ่านที่สร้างไว้ ${data.generatorHistory.length} รายการจะถูกลบจากประวัติถาวร รหัสที่บันทึกในรายการต่าง ๆ จะไม่ได้รับผลกระทบ`,
+              })
+              if (ok) void update((d) => ({ ...d, generatorHistory: [] })).catch(() => {})
+            }}>ล้างประวัติ</button>
           )}
         </aside>
       </div>
@@ -176,6 +183,7 @@ function Select({ value, options, onChange, label }: { value: number; options: [
 
 export function SettingsPage() {
   const { prefs, setPrefs, signOut, email, exportBackup, deleteVault } = useVault()
+  const confirm = useConfirm()
   const [active, setActive] = useState("security")
   const [changing, setChanging] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -215,7 +223,13 @@ export function SettingsPage() {
           <SettingsSection id="settings-sessions" title="อุปกรณ์และเซสชัน" description="อุปกรณ์ที่ลงชื่อเข้าใช้บัญชีนี้">
             <SettingsRow title="รายการอุปกรณ์" description="ดูอุปกรณ์ที่ลงชื่อเข้าใช้อยู่"><Soon /></SettingsRow>
             <SettingsRow title="ออกจากระบบทุกอุปกรณ์" description="ใช้เมื่อสงสัยว่ามีผู้อื่นเข้าถึงบัญชี">
-              <Button icon={<LogOut size={16} />} onClick={() => confirm("ออกจากระบบบนทุกอุปกรณ์รวมถึงเครื่องนี้?") && signOut(true)}>ออกทั้งหมด</Button>
+              <Button icon={<LogOut size={16} />} onClick={async () => {
+                const ok = await confirm({
+                  title: "ออกจากระบบทุกอุปกรณ์?", tone: "warning", confirmLabel: "ออกจากระบบทั้งหมด",
+                  message: "ทุกอุปกรณ์รวมถึงเครื่องนี้จะต้องเข้าสู่ระบบและปลดล็อกใหม่ ข้อมูลในตู้เซฟไม่ได้รับผลกระทบ",
+                })
+                if (ok) signOut(true)
+              }}>ออกทั้งหมด</Button>
             </SettingsRow>
           </SettingsSection>
 

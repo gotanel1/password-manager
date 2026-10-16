@@ -4,12 +4,13 @@ import {
   AlertTriangle, Archive, ArrowLeft, Banknote, ChevronDown, ChevronRight, CircleUserRound, Copy, CreditCard, Eye, EyeOff, FileText, Folder, FolderPlus,
   Globe2, History, KeyRound, MoreHorizontal, Plus, RefreshCw, RotateCcw, Settings, ShieldCheck, Star, Tag, Trash2, UserRound, WandSparkles, Wifi,
 } from "lucide-react"
-import { Button, IconButton, Modal, SidebarItem, StrengthMeter, Toggle } from "./ui"
+import { Button, IconButton, Modal, SidebarItem, StrengthMeter, Toggle, useConfirm } from "./ui"
 import { useVault } from "./state"
 import {
   TYPES, applyEdit, domainOf, headlineOf, iconFor, primaryWarning, subtitleOf, thaiDate, type Issue, type Item, type ItemType,
 } from "./lib/model"
 import { parseTotp, secondsLeft, totpAt } from "./lib/totp"
+import { LIMITS, itemWarnings, parseTags, validateFolderName, validateItem } from "./lib/validate"
 import { randomPassword, strength } from "./lib/password"
 
 export const TYPE_ICON: Record<ItemType, (size?: number) => ReactNode> = {
@@ -222,29 +223,41 @@ function Totp({ secret }: { secret: string }) {
 
 function ItemMenu({ item, onClose }: { item: Item; onClose: () => void }) {
   const { update, toast } = useVault()
+  const confirm = useConfirm()
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const off = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && onClose()
     window.addEventListener("mousedown", off)
     return () => window.removeEventListener("mousedown", off)
   }, [onClose])
-  const set = (patch: Partial<Item>, msg: string) => {
-    onClose()
+  const name = item.title || "ไม่มีชื่อ"
+  const set = (patch: Partial<Item>, msg: string) =>
     void update((d) => ({ ...d, items: d.items.map((i) => (i.id === item.id ? { ...i, ...patch, updated: Date.now() } : i)) })).then(() => toast(msg)).catch(() => {})
+  const moveToTrash = async () => {
+    onClose()
+    const ok = await confirm({
+      title: "ย้ายไปถังขยะ?", tone: "warning", confirmLabel: "ย้ายไปถังขยะ",
+      message: <><strong>{name}</strong> จะถูกย้ายไปถังขยะ กู้คืนได้ภายหลังจากเมนู ⋯ ในถังขยะ</>,
+    })
+    if (ok) set({ deleted: Date.now() }, "ย้ายไปถังขยะแล้ว")
+  }
+  const deleteForever = async () => {
+    onClose()
+    const ok = await confirm({
+      title: "ลบรายการถาวร?", tone: "danger", confirmLabel: "ลบถาวร",
+      message: <><strong>{name}</strong> และประวัติรหัสผ่านทั้งหมดของรายการนี้จะหายไปถาวร กู้คืนไม่ได้</>,
+    })
+    if (ok) void update((d) => ({ ...d, items: d.items.filter((i) => i.id !== item.id) })).then(() => toast("ลบถาวรแล้ว")).catch(() => {})
   }
   return (
     <div className="menu" ref={ref} role="menu">
       {item.deleted ? (
         <>
-          <button type="button" role="menuitem" onClick={() => set({ deleted: undefined }, "กู้คืนรายการแล้ว")}><RotateCcw size={16} /> กู้คืน</button>
-          <button type="button" role="menuitem" className="is-danger" onClick={() => {
-            onClose()
-            if (confirm(`ลบ "${item.title}" ถาวร? การดำเนินการนี้ย้อนกลับไม่ได้`))
-              void update((d) => ({ ...d, items: d.items.filter((i) => i.id !== item.id) })).then(() => toast("ลบถาวรแล้ว")).catch(() => {})
-          }}><Trash2 size={16} /> ลบถาวร</button>
+          <button type="button" role="menuitem" onClick={() => { onClose(); set({ deleted: undefined }, "กู้คืนรายการแล้ว") }}><RotateCcw size={16} /> กู้คืน</button>
+          <button type="button" role="menuitem" className="is-danger" onClick={() => void deleteForever()}><Trash2 size={16} /> ลบถาวร</button>
         </>
       ) : (
-        <button type="button" role="menuitem" className="is-danger" onClick={() => set({ deleted: Date.now() }, "ย้ายไปถังขยะแล้ว")}>
+        <button type="button" role="menuitem" className="is-danger" onClick={() => void moveToTrash()}>
           <Trash2 size={16} /> ย้ายไปถังขยะ
         </button>
       )}
@@ -429,25 +442,47 @@ export function ItemEditor({ initial, isNew, focusPassword, close, onSaved }: {
   initial: Item; isNew: boolean; focusPassword?: boolean; close: () => void; onSaved: (id: string) => void
 }) {
   const { data, update, toast } = useVault()
+  const confirm = useConfirm()
   const [item, setItem] = useState<Item>(initial)
   const [tagText, setTagText] = useState(initial.tags.join(", "))
   const [reveal, setReveal] = useState<Record<string, boolean>>({})
+  const [touched, setTouched] = useState<Record<string, boolean>>({})
+  const [submitted, setSubmitted] = useState(false)
   const [busy, setBusy] = useState(false)
+  const formRef = useRef<HTMLFormElement>(null)
   const pwRef = useRef<HTMLInputElement>(null)
   useEffect(() => { if (focusPassword) pwRef.current?.focus() }, [focusPassword])
+
+  const errors = useMemo(() => validateItem(item, tagText), [item, tagText])
+  const warnings = useMemo(() => itemWarnings(item), [item])
+  const shown = (k: string) => (submitted || touched[k] ? errors[k] : undefined)
+  const touch = (k: string) => () => setTouched((t) => (t[k] ? t : { ...t, [k]: true }))
+  const dirty = JSON.stringify({ ...item, tags: parseTags(tagText) }) !== JSON.stringify(initial)
 
   const setField = (k: string, v: string) => setItem((i) => ({ ...i, fields: { ...i.fields, [k]: v } }))
   const pw = item.fields.password
   const s = strength(pw ?? "")
-  const totpBad = !!item.fields.totp && !parseTotp(item.fields.totp)
+
+  const requestClose = async () => {
+    if (busy) return
+    if (dirty && !(await confirm({
+      title: "ทิ้งการแก้ไข?", tone: "warning", confirmLabel: "ทิ้งการแก้ไข",
+      message: "ข้อมูลที่กรอกในฟอร์มนี้ยังไม่ได้บันทึก และจะหายไปถ้าปิดตอนนี้",
+    }))) return
+    close()
+  }
 
   const save = async (e: FormEvent) => {
     e.preventDefault()
-    if (totpBad) return
+    setSubmitted(true)
+    if (Object.keys(errors).length) {
+      // Wait for error styles to render, then take the user to the first problem.
+      requestAnimationFrame(() => formRef.current?.querySelector<HTMLElement>("[aria-invalid=true]")?.focus())
+      return
+    }
     setBusy(true)
-    const tags = [...new Set(tagText.split(",").map((t) => t.trim().replace(/^#/, "")).filter(Boolean))]
     const prev = data.items.find((i) => i.id === item.id)
-    const next = applyEdit(prev, { ...item, title: item.title.trim(), tags })
+    const next = applyEdit(prev, { ...item, title: item.title.trim(), tags: parseTags(tagText) })
     try {
       await update((d) => ({
         ...d,
@@ -462,24 +497,38 @@ export function ItemEditor({ initial, isNew, focusPassword, close, onSaved }: {
     }
   }
 
+  const errorCount = submitted ? Object.keys(errors).length : 0
+  const msg = (k: string) =>
+    shown(k) ? <small className="input-error" id={`err-${k}`} role="alert">{shown(k)}</small>
+      : warnings[k] ? <small className="input-warning" id={`err-${k}`}>{warnings[k]}</small> : null
+  const aria = (k: string) => ({ "aria-invalid": !!shown(k), "aria-describedby": shown(k) || warnings[k] ? `err-${k}` : undefined, onBlur: touch(k) })
+
   return (
-    <Modal eyebrow={TYPES[item.type].label} title={isNew ? "สร้างรายการใหม่" : "แก้ไขรายการ"} onClose={close} wide>
-      <form className="editor-form" onSubmit={save}>
+    <Modal eyebrow={TYPES[item.type].label} title={isNew ? "สร้างรายการใหม่" : "แก้ไขรายการ"} onClose={() => void requestClose()} wide>
+      <form className="editor-form" onSubmit={save} noValidate ref={formRef}>
+        {errorCount > 0 && (
+          <div className="alert alert--danger" role="alert">
+            <AlertTriangle size={19} />
+            <div><strong>ยังบันทึกไม่ได้</strong><span>กรุณาแก้ไขข้อมูลที่ไม่ถูกต้อง {errorCount} จุด</span></div>
+          </div>
+        )}
         <label className="master-field">
-          <span>ชื่อรายการ</span>
-          <input value={item.title} onChange={(e) => setItem({ ...item, title: e.target.value })} placeholder="เช่น Gmail, บัตร KBank" required autoFocus={!focusPassword} />
+          <span>ชื่อรายการ <em className="req">*</em></span>
+          <input value={item.title} onChange={(e) => setItem({ ...item, title: e.target.value })} placeholder="เช่น Gmail, บัตร KBank"
+            maxLength={LIMITS.title + 20} autoFocus={!focusPassword} {...aria("title")} />
+          {msg("title")}
         </label>
 
         {TYPES[item.type].fields.map((f) => (
           <label className="master-field" key={f.key}>
             <span>{f.label}</span>
             {f.multiline ? (
-              <textarea value={item.fields[f.key] ?? ""} onChange={(e) => setField(f.key, e.target.value)} rows={3} />
+              <textarea value={item.fields[f.key] ?? ""} onChange={(e) => setField(f.key, e.target.value)} rows={3} {...aria(f.key)} />
             ) : f.secret ? (
-              <div className="editor-input">
+              <div className={`editor-input ${shown(f.key) ? "has-error" : ""}`}>
                 <input ref={f.key === "password" ? pwRef : undefined} className={f.mono ? "mono" : ""} type={reveal[f.key] ? "text" : "password"}
                   value={item.fields[f.key] ?? ""} onChange={(e) => setField(f.key, e.target.value)} placeholder={f.placeholder}
-                  autoComplete={f.key === "password" ? "new-password" : "off"} spellCheck={false} />
+                  autoComplete={f.key === "password" ? "new-password" : "off"} spellCheck={false} inputMode={NUMERIC.has(f.key) ? "numeric" : undefined} {...aria(f.key)} />
                 <IconButton label={reveal[f.key] ? "ซ่อน" : "แสดง"} onClick={() => setReveal({ ...reveal, [f.key]: !reveal[f.key] })}>
                   {reveal[f.key] ? <EyeOff size={17} /> : <Eye size={17} />}
                 </IconButton>
@@ -492,10 +541,11 @@ export function ItemEditor({ initial, isNew, focusPassword, close, onSaved }: {
               </div>
             ) : (
               <input className={f.mono ? "mono" : ""} value={item.fields[f.key] ?? ""} onChange={(e) => setField(f.key, e.target.value)}
-                placeholder={f.placeholder} type={f.link ? "url" : "text"} autoComplete="off" />
+                placeholder={f.placeholder} type="text" autoComplete="off" {...aria(f.key)}
+                inputMode={f.link ? "url" : f.key === "email" ? "email" : f.key === "phone" ? "tel" : NUMERIC.has(f.key) ? "numeric" : undefined} />
             )}
+            {msg(f.key)}
             {f.key === "password" && pw ? <StrengthMeter level={s.level} label={`${s.label} · ${s.crack}`} /> : null}
-            {f.key === "totp" && totpBad && <small className="input-error">คีย์ 2FA ไม่ถูกต้อง</small>}
           </label>
         ))}
 
@@ -512,13 +562,15 @@ export function ItemEditor({ initial, isNew, focusPassword, close, onSaved }: {
           </label>
           <label className="master-field">
             <span>แท็ก (คั่นด้วยจุลภาค)</span>
-            <input value={tagText} onChange={(e) => setTagText(e.target.value)} placeholder="งาน, สำคัญ" />
+            <input value={tagText} onChange={(e) => setTagText(e.target.value)} placeholder="งาน, สำคัญ" {...aria("tags")} />
+            {msg("tags")}
           </label>
         </div>
 
         <label className="master-field">
-          <span>บันทึก</span>
-          <textarea value={item.notes} onChange={(e) => setItem({ ...item, notes: e.target.value })} rows={item.type === "note" ? 8 : 3} />
+          <span>บันทึก{item.type === "note" && <> <em className="req">*</em></>}</span>
+          <textarea value={item.notes} onChange={(e) => setItem({ ...item, notes: e.target.value })} rows={item.type === "note" ? 8 : 3} {...aria("notes")} />
+          {msg("notes")}
         </label>
 
         <div className="setting-toggle editor-fav">
@@ -527,40 +579,49 @@ export function ItemEditor({ initial, isNew, focusPassword, close, onSaved }: {
         </div>
 
         <div className="editor-actions">
-          <Button variant="ghost" onClick={close}>ยกเลิก</Button>
-          <Button variant="primary" type="submit" disabled={busy || totpBad}>{busy ? "กำลังบันทึก…" : "บันทึก"}</Button>
+          <Button variant="ghost" onClick={() => void requestClose()} disabled={busy}>ยกเลิก</Button>
+          <Button variant="primary" type="submit" disabled={busy}>{busy ? "กำลังบันทึก…" : "บันทึก"}</Button>
         </div>
       </form>
     </Modal>
   )
 }
+
+const NUMERIC = new Set(["cardNumber", "cvv", "pin", "accountNumber"])
 
 export function FolderModal({ close }: { close: () => void }) {
   const { data, update, toast } = useVault()
   const [name, setName] = useState("")
-  const exists = data.folders.includes(name.trim())
+  const [touched, setTouched] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const error = validateFolderName(name, data.folders)
+  // Duplicate names are flagged while typing; other problems once the field is left or submitted.
+  const shown = touched || (name.trim() && error === "มีโฟลเดอร์ชื่อนี้แล้ว") ? error : null
   return (
     <Modal eyebrow="จัดระเบียบ" title="สร้างโฟลเดอร์" onClose={close}>
-      <form className="editor-form" onSubmit={async (e) => {
+      <form className="editor-form" noValidate onSubmit={async (e) => {
         e.preventDefault()
-        if (!name.trim() || exists) return
+        setTouched(true)
+        if (error) return
+        setBusy(true)
         try {
           await update((d) => ({ ...d, folders: [...d.folders, name.trim()] }))
           toast(`สร้างโฟลเดอร์ "${name.trim()}" แล้ว`)
           close()
-        } catch { /* Keep the form open; App reports the failed save. */ }
+        } catch { setBusy(false) /* Keep the form open; App reports the failed save. */ }
       }}>
         <label className="master-field">
-          <span>ชื่อโฟลเดอร์</span>
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="เช่น ครอบครัว" autoFocus required />
-          {exists && <small className="input-error">มีโฟลเดอร์ชื่อนี้แล้ว</small>}
+          <span>ชื่อโฟลเดอร์ <em className="req">*</em></span>
+          <input value={name} onChange={(e) => setName(e.target.value)} onBlur={() => name && setTouched(true)} placeholder="เช่น ครอบครัว" autoFocus
+            maxLength={LIMITS.folder + 10} aria-invalid={!!shown} aria-describedby={shown ? "err-folder" : undefined} />
+          {shown ? <small className="input-error" id="err-folder" role="alert">{shown}</small>
+            : <small className="input-hint">{name.trim().length}/{LIMITS.folder}</small>}
         </label>
         <div className="editor-actions">
           <Button variant="ghost" onClick={close}>ยกเลิก</Button>
-          <Button variant="primary" type="submit" icon={<FolderPlus size={17} />} disabled={!name.trim() || exists}>สร้าง</Button>
+          <Button variant="primary" type="submit" icon={<FolderPlus size={17} />} disabled={busy}>สร้าง</Button>
         </div>
       </form>
     </Modal>
   )
 }
-

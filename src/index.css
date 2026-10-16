@@ -2090,3 +2090,18 @@ input.mono, .editor-input input.mono { font-family: "JetBrains Mono", monospace;
   .editor-grid { grid-template-columns: 1fr; }
   .menu { right: 12px; }
 }
+
+/* Validation and confirmation */
+.req { color: var(--danger); font-style: normal; }
+.input-warning { color: var(--warning); font-size: 10px; font-weight: 500; }
+.input-hint { color: var(--text-faint); font-size: 10px; font-weight: 500; text-align: right; }
+.editor-form [aria-invalid="true"], .editor-input.has-error { border-color: var(--danger) !important; }
+.editor-input [aria-invalid="true"] { border: 0 !important; }
+.editor-form [aria-invalid="true"]:focus, .editor-input.has-error:focus-within { box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 14%, transparent) !important; }
+.editor-form > .alert { margin: 4px 0 0; }
+.confirm-body { display: flex; gap: 12px; padding: 14px; border-radius: 10px; font-size: 14px; line-height: 1.6; }
+.confirm-body > svg { flex: 0 0 auto; margin-top: 2px; }
+.confirm-body--danger { color: var(--text); background: var(--danger-soft); border: 1px solid color-mix(in srgb, var(--danger) 25%, transparent); }
+.confirm-body--danger > svg { color: var(--danger); }
+.confirm-body--warning { color: var(--text); background: var(--warning-soft); border: 1px solid color-mix(in srgb, var(--warning) 25%, transparent); }
+.confirm-body--warning > svg { color: var(--warning); }

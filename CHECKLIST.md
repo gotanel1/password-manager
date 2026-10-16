@@ -36,10 +36,13 @@
 - [x] กัน production build ที่เปิดโหมด mock
 - [x] Vitest, คำสั่งตรวจ TypeScript ของ tests และคำสั่งตรวจ production bundle
 - [x] USER_GUIDE.md และ TESTING.md พร้อมขั้นตอนทดสอบบริการจริง
+- [x] ตรวจความถูกต้องของฟอร์มรายการ: ชื่อ, URL, คีย์ 2FA, หมายเลขบัตร (Luhn), วันหมดอายุ, CVV, อีเมล, เบอร์โทร, เลขบัญชี, PIN, Wi-Fi, แท็ก และบันทึก พร้อมข้อความใต้ช่องและพาไปยังช่องแรกที่ผิด
+- [x] ตรวจชื่อโฟลเดอร์ (ห้ามว่าง ห้ามซ้ำแบบไม่สนตัวพิมพ์ ยาวไม่เกิน 40 ตัว)
+- [x] กล่องยืนยันในแอปก่อนย้ายไปถังขยะ, ลบถาวร, ล้างประวัติตัวสร้างรหัส, ออกจากระบบทุกอุปกรณ์ และปิดฟอร์มที่ยังไม่บันทึก (โฟกัสปุ่มยกเลิกเป็นค่าเริ่มต้น)
 
 ## ทดสอบผ่านบนเครื่องแล้ว
 
-- [x] Vitest 65 กรณี: session, App, crypto/model, prefs, sync, build config และ settings
+- [x] Vitest 77 กรณี: session, App, crypto/model, prefs, sync, build config, settings, validation และกล่องยืนยัน
 - [x] TypeScript ทั้งแอปและ tests ผ่าน `npm run typecheck`
 - [x] Production build และตรวจ bundle ไม่มี mock markers/source maps
 - [x] เพิ่ม–แก้ไข–ค้นหา–ย้ายถังขยะ–กู้คืนครบ 6 ประเภทผ่าน In-app Browser โหมด mock
