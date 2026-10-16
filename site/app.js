@@ -78,17 +78,24 @@ function generate(len, sym) {
   for (let i = out.length - 1; i > 0; i--) { const j = randInt(i + 1); [out[i], out[j]] = [out[j], out[i]]; }
   return out.join("");
 }
-function strength(p) {
+function bits(p) {
   if (!p) return 0;
   let pool = 0;
   if (/[a-z]/.test(p)) pool += 26; if (/[A-Z]/.test(p)) pool += 26;
   if (/\d/.test(p)) pool += 10; if (/[^a-zA-Z\d]/.test(p)) pool += 33;
-  return Math.min(1, p.length * Math.log2(pool || 1) / 100);
+  return Math.round(p.length * Math.log2(pool || 1));
 }
+// Tumbler scale: 0 none, 1 very weak (<40 bits), 2 fair (<60), 3 good (<80), 4 strong.
+const LEVELS = [["", ""], ["อ่อนมาก", "danger"], ["พอใช้", "warn"], ["ดี", "good"], ["แข็งแรง", "good"]];
+function score(p) { const b = bits(p); return !b ? 0 : b < 40 ? 1 : b < 60 ? 2 : b < 80 ? 3 : 4; }
 function meter(el, p) {
-  const s = strength(p);
-  el.style.width = (s * 100) + "%";
-  el.style.background = s < .4 ? "var(--danger)" : s < .7 ? "#e8a317" : "var(--ok)";
+  const s = score(p), [word, tone] = LEVELS[s];
+  el.dataset.tone = tone;
+  const pins = document.createElement("span"); pins.className = "pins";
+  for (let i = 0; i < 4; i++) { const pin = document.createElement("span"); pin.className = "pin" + (i < s ? " on" : ""); pins.append(pin); }
+  const w = document.createElement("span"); w.className = "word"; w.textContent = word;
+  const d = document.createElement("span"); d.className = "meta muted"; d.textContent = p ? `${p.length} ตัว · ประมาณ ${bits(p)} บิต` : "";
+  el.replaceChildren(pins, w, d);
 }
 
 // ---------- UI helpers ----------
@@ -97,7 +104,7 @@ function msg(el, t, kind) { el.textContent = t; el.className = "msg " + (kind ||
 let clipTimer;
 async function copy(text, what) {
   await navigator.clipboard.writeText(text);
-  toast("คัดลอก" + what + "แล้ว");
+  toast(`คัดลอก${what}แล้ว · ล้างคลิปบอร์ดใน ${CLIP_CLEAR_MS / 1000} วินาที`);
   clearTimeout(clipTimer);
   clipTimer = setTimeout(() => navigator.clipboard.writeText("").catch(() => {}), CLIP_CLEAR_MS);
 }
@@ -108,6 +115,7 @@ function show(view) {
 async function showLock() {
   show("lockView");
   $("whoami").textContent = user.email;
+  $("whoTile").textContent = initial(user.email);
   msg($("lockMsg"), "กำลังโหลดตู้เซฟ…");
   try { await fetchVault(); msg($("lockMsg"), ""); }
   catch (e) { return msg($("lockMsg"), "โหลดตู้เซฟไม่สำเร็จ: " + e.message, "err"); }
@@ -130,25 +138,39 @@ function touch() { if (!key) return; clearTimeout(lockTimer); lockTimer = setTim
 
 function showVault() { show("vaultView"); $("search").value = ""; render(); touch(); }
 
+// Monogram from the name instead of a fetched favicon, so the list never reveals which sites you use.
+const initial = s => (s || "?").replace(/^https?:\/\//, "").replace(/^www\./, "").charAt(0).toUpperCase();
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; };
+
 function render() {
   const q = $("search").value.trim().toLowerCase();
   const list = entries
     .filter(e => !q || [e.title, e.user, e.url].some(v => (v || "").toLowerCase().includes(q)))
     .sort((a, b) => a.title.localeCompare(b.title, "th"));
-  $("count").textContent = `${entries.length} รายการ`;
+  const uses = new Map();
+  for (const e of entries) if (e.pass) uses.set(e.pass, (uses.get(e.pass) || 0) + 1);
+  const reused = entries.filter(e => e.pass && uses.get(e.pass) > 1).length;
+  const weak = entries.filter(e => e.pass && score(e.pass) === 1).length;
+  $("count").textContent = [`${entries.length} รายการ`, reused && `ใช้ซ้ำ ${reused}`, weak && `อ่อน ${weak}`].filter(Boolean).join(" · ");
   const root = $("list");
-  if (!list.length) { root.innerHTML = `<div class="muted">${entries.length ? "ไม่พบรายการที่ค้นหา" : "ยังไม่มีรายการ กด “+ เพิ่ม” เพื่อเริ่ม"}</div>`; return; }
+  if (!list.length) {
+    root.replaceChildren(el("div", "empty", entries.length ? "ไม่พบรายการ ลองค้นด้วยชื่อโดเมน" : "ยังไม่มีรายการ กด “เพิ่มรายการ” เพื่อเริ่ม"));
+    return;
+  }
   root.replaceChildren(...list.map(e => {
-    const row = document.createElement("div"); row.className = "entry";
-    const info = document.createElement("div"); info.className = "grow";
-    const t = document.createElement("div"); t.className = "title"; t.textContent = e.title;
-    const s = document.createElement("div"); s.className = "sub"; s.textContent = e.user || e.url || "";
-    info.append(t, s);
-    const mk = (label, fn) => { const b = document.createElement("button"); b.textContent = label; b.onclick = fn; return b; };
-    row.append(info);
-    if (e.user) row.append(mk("ชื่อผู้ใช้", () => copy(e.user, "ชื่อผู้ใช้")));
-    if (e.pass) row.append(mk("รหัสผ่าน", () => copy(e.pass, "รหัสผ่าน")));
-    row.append(mk("แก้ไข", () => openEdit(e)));
+    const row = el("div", "entry");
+    const tile = el("span", "tile", initial(e.title)); tile.setAttribute("aria-hidden", "true");
+    const main = el("div", "main");
+    main.append(el("span", "name", e.title), el("span", "sub meta", e.user || e.url || " "));
+    const tags = el("div", "tags");
+    if (e.pass && score(e.pass) === 1) tags.append(el("span", "tag danger", "อ่อน"));
+    if (e.pass && uses.get(e.pass) > 1) tags.append(el("span", "tag warn", `ใช้ซ้ำ ${uses.get(e.pass)} ที่`));
+    const acts = el("div", "acts");
+    const mk = (label, cls, fn) => { const b = el("button", cls, label); b.onclick = fn; return b; };
+    if (e.user) acts.append(mk("ชื่อผู้ใช้", "small", () => copy(e.user, "ชื่อผู้ใช้")));
+    if (e.pass) acts.append(mk("รหัสผ่าน", "small", () => copy(e.pass, "รหัสผ่าน")));
+    acts.append(mk("แก้ไข", "small quiet", () => openEdit(e)));
+    row.append(tile, main, tags, acts);
     return row;
   }));
 }
@@ -198,17 +220,18 @@ function openEdit(e) {
   $("editTitle").textContent = e ? "แก้ไขรายการ" : "เพิ่มรายการ";
   $("fTitle").value = e?.title || ""; $("fUser").value = e?.user || "";
   $("fPass").value = e?.pass || ""; $("fUrl").value = e?.url || ""; $("fNotes").value = e?.notes || "";
-  $("fPass").type = "password";
+  $("fPass").type = "password"; $("togglePass").textContent = "แสดง";
   $("delBtn").classList.toggle("hidden", !e);
   meter($("passMeter"), $("fPass").value);
   $("editDlg").showModal();
 }
 $("addBtn").onclick = () => openEdit(null);
 $("fPass").oninput = () => meter($("passMeter"), $("fPass").value);
-$("togglePass").onclick = () => { $("fPass").type = $("fPass").type === "password" ? "text" : "password"; };
+function reveal(on) { $("fPass").type = on ? "text" : "password"; $("togglePass").textContent = on ? "ซ่อน" : "แสดง"; }
+$("togglePass").onclick = () => reveal($("fPass").type === "password");
 $("genBtn").onclick = () => {
   const len = Math.max(8, Math.min(128, +$("genLen").value || 20));
-  $("fPass").value = generate(len, $("genSym").checked); $("fPass").type = "text";
+  $("fPass").value = generate(len, $("genSym").checked); reveal(true);
   meter($("passMeter"), $("fPass").value);
 };
 $("editForm").addEventListener("submit", async ev => {
