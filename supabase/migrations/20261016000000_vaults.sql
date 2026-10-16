@@ -12,12 +12,16 @@ create table if not exists public.vaults (
 alter table public.vaults enable row level security;
 
 -- Each user can only see and change their own row.
+drop policy if exists "vaults_select_own" on public.vaults;
 create policy "vaults_select_own" on public.vaults
   for select to authenticated using ((select auth.uid()) = user_id);
+drop policy if exists "vaults_insert_own" on public.vaults;
 create policy "vaults_insert_own" on public.vaults
   for insert to authenticated with check ((select auth.uid()) = user_id);
+drop policy if exists "vaults_update_own" on public.vaults;
 create policy "vaults_update_own" on public.vaults
   for update to authenticated using ((select auth.uid()) = user_id) with check ((select auth.uid()) = user_id);
+drop policy if exists "vaults_delete_own" on public.vaults;
 create policy "vaults_delete_own" on public.vaults
   for delete to authenticated using ((select auth.uid()) = user_id);
 
