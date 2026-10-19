@@ -4,7 +4,7 @@ import { useState, type FormEvent, type ReactNode } from "react"
 import {
   AlertTriangle, ArrowLeft, Check, ChevronRight, Copy, Download, Eye, EyeOff, Fingerprint, KeyRound, LifeBuoy, Lock, LockKeyhole, Mail, ShieldCheck,
 } from "lucide-react"
-import { Brand, Button, IconButton, Soon, StrengthMeter } from "./ui"
+import { Brand, Button, IconButton, StrengthMeter } from "./ui"
 import { strength } from "./lib/password"
 import { download } from "./lib/prefs"
 import { normalizeRecoveryCode } from "./lib/keys"
@@ -289,7 +289,13 @@ export function KitScreen({ email, code, reason, onDone, onCopy }: {
 }
 
 // ---------- unlock ----------
-export function UnlockScreen({ email, onUnlock, onSignOut }: { email: string; onUnlock: (password: string) => Promise<string | null>; onSignOut: () => void }) {
+export function UnlockScreen({ email, onUnlock, onBiometric, onSignOut }: {
+  email: string
+  onUnlock: (password: string) => Promise<string | null>
+  /** Set when a passkey is enrolled on this device for `email`. */
+  onBiometric?: () => Promise<string | null>
+  onSignOut: () => void
+}) {
   const [password, setPassword] = useState("")
   const { busy, error, setError, run } = useBusy()
   return (
@@ -308,10 +314,14 @@ export function UnlockScreen({ email, onUnlock, onSignOut }: { email: string; on
           <ErrorText text={error} />
           <Button variant="primary" className="auth-submit" type="submit" disabled={busy}>{busy ? "กำลังปลดล็อก…" : "ปลดล็อก"}</Button>
         </form>
-        <div className="unlock-divider"><span>หรือ</span></div>
-        <Button variant="secondary" className="auth-submit" icon={<Fingerprint size={19} />} disabled>
-          ปลดล็อกด้วย Passkey หรือลายนิ้วมือ <Soon />
-        </Button>
+        {onBiometric && (
+          <>
+            <div className="unlock-divider"><span>หรือ</span></div>
+            <Button variant="secondary" className="auth-submit" icon={<Fingerprint size={19} />} disabled={busy} onClick={() => void run(onBiometric)}>
+              ปลดล็อกด้วย Passkey หรือลายนิ้วมือ
+            </Button>
+          </>
+        )}
         <button className="text-action" type="button" onClick={onSignOut}>ออกจากบัญชีนี้</button>
       </section>
     </AccessLayout>

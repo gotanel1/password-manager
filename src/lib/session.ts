@@ -104,6 +104,11 @@ export class VaultSession {
     })
   }
 
+  /** The vault key, for wrapping it to this device's passkey; null once the session is closing. */
+  vaultKeyForDevice() {
+    return this.closing ? null : this.vaultKey
+  }
+
   backup() {
     return this.enqueue(async () => {
       if (this.error) throw this.error

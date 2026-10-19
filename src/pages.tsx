@@ -1,5 +1,6 @@
 // Secondary pages: password generator, security dashboard, settings.
 import { useEffect, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from "react"
+import { biometricSupported } from "./lib/biometric"
 import {
   AlertTriangle, Check, ChevronDown, ChevronRight, Clock3, Copy, Download, Fingerprint, KeyRound, Laptop, LogOut, Moon, Network, RefreshCw,
   Settings, Shield, ShieldCheck, Sun, Upload, WandSparkles, LifeBuoy,
@@ -184,7 +185,22 @@ function Select({ value, options, onChange, label }: { value: number; options: [
 }
 
 export function SettingsPage() {
-  const { prefs, setPrefs, signOut, email, exportBackup, deleteVault, rotateRecovery, toast } = useVault()
+  const { prefs, setPrefs, signOut, email, exportBackup, deleteVault, rotateRecovery, toast, biometric, enableBiometric, disableBiometric } = useVault()
+  const [bioSupported, setBioSupported] = useState(false)
+  const [bioBusy, setBioBusy] = useState(false)
+  useEffect(() => { void biometricSupported().then(setBioSupported) }, [])
+  const toggleBiometric = async () => {
+    if (biometric) {
+      disableBiometric()
+      toast("ปิดใช้ Passkey บนอุปกรณ์นี้แล้ว ลบ passkey ของตู้เซฟออกจากตั้งค่าเครื่องได้ถ้าต้องการ")
+      return
+    }
+    setBioBusy(true)
+    try {
+      const err = await enableBiometric()
+      toast(err ?? "เปิดใช้แล้ว ปลดล็อกด้วย Passkey ได้ในเบราว์เซอร์หรือแอปนี้ รหัสผ่านหลักยังใช้ได้เสมอ")
+    } finally { setBioBusy(false) }
+  }
   const confirm = useConfirm()
   const [active, setActive] = useState("security")
   const [changing, setChanging] = useState(false)
@@ -230,8 +246,12 @@ export function SettingsPage() {
                 else toast("สร้างรหัสกู้คืนใหม่ไม่สำเร็จ รหัสเดิมยังใช้ได้")
               }}>สร้างใหม่</Button>
             </SettingsRow>
-            <SettingsRow title="ปลดล็อกด้วย Passkey" description="ใช้ลายนิ้วมือหรือใบหน้า">
-              <span className="row-inline"><Soon /><Toggle checked={false} onChange={() => {}} label="ปลดล็อกด้วย Passkey" disabled /></span>
+            <SettingsRow title="ปลดล็อกด้วย Passkey" description={bioSupported
+              ? "ใช้ Face ID, Touch ID หรือลายนิ้วมือแทนการพิมพ์รหัสผ่านหลัก เฉพาะในเบราว์เซอร์หรือแอปนี้ (iPhone ต้อง iOS 18 ขึ้นไป)"
+              : "เบราว์เซอร์นี้ไม่มีตัวยืนยันตัวตนในเครื่อง หรือยังไม่รองรับ"}>
+              {bioSupported
+                ? <Toggle checked={biometric} onChange={() => void toggleBiometric()} label="ปลดล็อกด้วย Passkey" disabled={bioBusy} />
+                : <Badge>ไม่รองรับ</Badge>}
             </SettingsRow>
             <SettingsRow title="การยืนยันสองขั้นตอน" description="เพิ่มความปลอดภัยให้บัญชีตู้เซฟ"><Soon /></SettingsRow>
           </SettingsSection>

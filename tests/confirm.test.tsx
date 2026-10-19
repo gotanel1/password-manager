@@ -16,6 +16,7 @@ beforeEach(async () => {
     prefs: { theme: "light", autoLockMin: 5, clipboardSec: 30 }, setPrefs: vi.fn(),
     update: vi.fn(), copy: vi.fn(), toast: vi.fn(), lock: vi.fn(), signOut: vi.fn(),
     changeMaster: vi.fn(), rotateRecovery: vi.fn(), importBackup: vi.fn(), exportBackup: vi.fn(), deleteVault: vi.fn(),
+    biometric: false, enableBiometric: vi.fn(async () => null), disableBiometric: vi.fn(),
   }
   host = document.createElement("div"); document.body.append(host); root = createRoot(host)
   await act(async () => {
