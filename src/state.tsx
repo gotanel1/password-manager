@@ -15,6 +15,11 @@ export type VaultApi = {
   analysis: ReturnType<typeof analyze>
   lock: () => void
   signOut: (everywhere?: boolean) => void
+  /** A passkey on this device can unlock the vault. */
+  biometric: boolean
+  /** Enrols a passkey for this device; resolves to an error message, or null when enabled. */
+  enableBiometric: () => Promise<string | null>
+  disableBiometric: () => void
   changeMaster: (oldPassword: string, newPassword: string) => Promise<string | null>
   /** Issues a new recovery code (the old one stops working); null if it could not be saved. */
   rotateRecovery: () => Promise<string | null>

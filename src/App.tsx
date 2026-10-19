@@ -6,7 +6,8 @@ import { Detail, FolderModal, ItemEditor, ItemRow, Sidebar, TypePicker, applyFil
 import { Generator, SecurityPage, SettingsPage } from "./pages"
 import { VaultContext, useVault, type VaultApi } from "./state"
 import { isEnvelope, unb64, unseal } from "./lib/crypto"
-import { deriveForEmail, deriveMasterKeys, isEnvelopeV2, openV2, unlockWithMaster, type MasterKeys } from "./lib/keys"
+import { deriveForEmail, deriveMasterKeys, headerOf, isEnvelopeV2, openV2, unlockWithMaster, type MasterKeys } from "./lib/keys"
+import { BiometricCancelledError, BiometricPendingError, BiometricUnsupportedError, enrollBiometric, forgetBiometric, hasBiometric, unlockBiometric } from "./lib/biometric"
 import { NoRecoveryError, WrongPasswordError, createVault, isLegacyBlob, openVault, recoverVault, upgradeVault, type Opened } from "./lib/vaultkeys"
 import { VaultSession, type SyncState } from "./lib/session"
 import { analyze, emptyVault, migrate, newItem, type Item, type ItemType, type VaultData } from "./lib/model"
@@ -40,6 +41,7 @@ export default function App() {
   const [data, setData] = useState<VaultData>(emptyVault)
   const [prefs, setPrefsState] = useState<Prefs>(loadPrefs)
   const [sync, setSync] = useState<SyncState>("saved")
+  const [biometric, setBiometric] = useState(false)
   const [toastMsg, setToastMsg] = useState("")
   const toastTimer = useRef<number | undefined>(undefined)
   const sessionRef = useRef<VaultSession | null>(null)
@@ -119,6 +121,8 @@ export default function App() {
 
   const signOut = useCallback((everywhere = false) => {
     clearVault()
+    forgetBiometric() // leaving the account on this device also drops its passkey shortcut
+    setBiometric(false)
     recoveryRef.current = false
     const request = accessRequest.current
     setPhase("loading")
@@ -148,6 +152,7 @@ export default function App() {
     sessionRef.current = session
     setData(o.data)
     setSync("saved")
+    setBiometric(hasBiometric(owner.email ?? ""))
   }
 
   /** Opens `o` and either goes straight in or first shows a new recovery code. */
@@ -230,6 +235,21 @@ export default function App() {
     toast: (message) => { if (active()) toast(message) },
     lock: () => { if (active()) lock() },
     signOut: (everywhere) => { if (active()) signOut(everywhere) },
+    biometric,
+    enableBiometric: async () => {
+      const session = sessionRef.current
+      const vaultKey = session?.vaultKeyForDevice()
+      if (!session || !active() || !vaultKey) return "กรุณาปลดล็อกตู้เซฟก่อน"
+      try {
+        await enrollBiometric(user?.email ?? "", vaultKey)
+        if (active()) setBiometric(true)
+        return null
+      } catch (e) {
+        if (e instanceof BiometricCancelledError || e instanceof BiometricUnsupportedError || e instanceof BiometricPendingError) return e.message
+        return "เปิดใช้ Passkey ไม่สำเร็จ กรุณาลองอีกครั้ง"
+      }
+    },
+    disableBiometric: () => { forgetBiometric(); setBiometric(false) },
     copy: async (label, text) => {
       if (!active()) return false
       try {
@@ -294,6 +314,8 @@ export default function App() {
       if (!active()) throw new Error("กรุณาปลดล็อกตู้เซฟก่อน")
       const owner = userRef.current!
       clearVault()
+      forgetBiometric() // the next vault gets a new key, which this passkey could not open
+      setBiometric(false)
       setPhase("unlock")
       try {
         await draining.current
@@ -477,6 +499,33 @@ export default function App() {
       <UnlockScreen
         email={user?.email ?? ""}
         onSignOut={() => signOut()}
+        onBiometric={hasBiometric(user?.email ?? "") ? async () => {
+          const request = ++accessRequest.current
+          const owner = userRef.current!
+          let remote: Remote
+          try { await draining.current; remote = await fetchVault(owner) } catch {
+            if (request === accessRequest.current) setSync("error")
+            return "โหลดข้อมูลล่าสุดไม่สำเร็จ ตรวจการเชื่อมต่อแล้วลองอีกครั้ง"
+          }
+          if (request !== accessRequest.current) return "สถานะบัญชีเปลี่ยน กรุณาลองใหม่"
+          if (!remote) { setPhase("setup"); return null }
+          const blob = remote.blob as unknown
+          if (!isEnvelopeV2(blob)) { forgetBiometric(); return "ตู้เซฟนี้ต้องปลดล็อกด้วยรหัสผ่านหลักก่อน" }
+          let vaultKey: CryptoKey
+          try { vaultKey = await unlockBiometric(owner.email ?? "") } catch (e) {
+            if (e instanceof BiometricCancelledError) return null
+            return e instanceof BiometricUnsupportedError ? e.message : "ปลดล็อกด้วย Passkey ไม่สำเร็จ กรุณาใช้รหัสผ่านหลัก"
+          }
+          let data: VaultData
+          try { data = migrate(await openV2(blob, vaultKey)) } catch {
+            // The vault was re-keyed since this passkey was set up (e.g. deleted and created again).
+            forgetBiometric()
+            return "Passkey นี้เปิดตู้เซฟปัจจุบันไม่ได้แล้ว กรุณาปลดล็อกด้วยรหัสผ่านหลัก แล้วเปิดใช้ Passkey ใหม่ในตั้งค่า"
+          }
+          if (request !== accessRequest.current) return "สถานะบัญชีเปลี่ยน กรุณาลองใหม่"
+          enter({ vaultKey, header: headerOf(blob), data, remote }, owner)
+          return null
+        } : undefined}
         onUnlock={async (password) => {
           const request = ++accessRequest.current
           const owner = userRef.current!
