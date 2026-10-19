@@ -81,6 +81,7 @@ git diff --check
 
 - ตรวจ Node ตาม `netlify.toml`, build command `npm run build`, publish directory `dist` และตั้ง URL/anon key โดยไม่มี VAULT_MOCK
 - ตรวจ security headers ที่ตั้งไว้: CSP, frame-ancestors, nosniff, referrer policy, HSTS และ Permissions-Policy โดยไม่ผ่อนนโยบายเพื่อให้ทดสอบผ่าน
+- ตรวจ PWA บน URL จริง: เปิดผ่าน HTTPS แล้วติดตั้งได้จาก Chrome (Android/คอม) และ Safari (iPhone) ไอคอนถูกต้อง และ DevTools → Application ไม่มี error ของ manifest หรือ service worker (CSP ต้องมี `manifest-src 'self'` และ `worker-src 'self'`)
 - ผลตรวจไฟล์ config ไม่ใช่ผลตรวจ response ของเว็บไซต์จริง ต้องตรวจ headers ผ่าน HTTPS หลัง deployment ด้วย
 - ผ่านการทดสอบ Supabase/RLS และแก้ปัญหาวิกฤตก่อนขออนุมัติ deploy หรือ push ที่กระตุ้น deploy; ห้ามถือว่าคำสั่ง build เป็นการเผยแพร่แล้ว
 - หลังอนุมัติและ deploy ให้ทดสอบวงจรสมัครบัญชี → ยืนยันอีเมล → สร้างตู้เซฟ → บันทึก → โหลดหน้าใหม่ → สำรอง → นำเข้าคืนบน URL จริง พร้อมตรวจว่า callback กลับ URL ถูกต้อง

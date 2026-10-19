@@ -206,7 +206,13 @@ export default function App() {
   // ---------- theme ----------
   useEffect(() => {
     const mq = window.matchMedia("(prefers-color-scheme: dark)")
-    const apply = () => (document.documentElement.dataset.theme = prefs.theme === "system" ? (mq.matches ? "dark" : "light") : prefs.theme)
+    const apply = () => {
+      const root = document.documentElement
+      root.dataset.theme = prefs.theme === "system" ? (mq.matches ? "dark" : "light") : prefs.theme
+      // The installed app's title bar follows the chosen theme, not just the system one.
+      const bg = getComputedStyle(root).getPropertyValue("--bg").trim()
+      if (bg) document.querySelectorAll('meta[name="theme-color"]').forEach((meta) => meta.setAttribute("content", bg))
+    }
     apply()
     mq.addEventListener("change", apply)
     return () => mq.removeEventListener("change", apply)
