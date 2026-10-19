@@ -1075,6 +1075,7 @@ kbd {
 }
 
 .toggle {
+  flex: 0 0 auto; /* keeps its size next to a long description in a flex row */
   width: 42px;
   height: 24px;
   padding: 3px;
@@ -1189,6 +1190,7 @@ kbd {
 .settings-section-title p { margin: 2px 0 0; color: var(--text-muted); font-size: 11px; }
 .settings-row { min-height: 70px; padding: 12px 20px; display: flex; align-items: center; justify-content: space-between; gap: 20px; border-bottom: 1px solid var(--border); }
 .settings-row:last-child { border-bottom: 0; }
+.settings-row > .button { flex: 0 0 auto; white-space: nowrap; } /* a long description must not fold the action onto two lines */
 .settings-row strong { font-size: 12px; }
 .settings-row p { margin: 2px 0 0; color: var(--text-muted); font-size: 10px; }
 .select-button { min-height: 36px; padding: 0 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }

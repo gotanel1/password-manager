@@ -241,7 +241,7 @@ export function SettingsPage() {
               }}>สร้างใหม่</Button>
             </SettingsRow>
             <SettingsRow title="ปลดล็อกด้วย Passkey" description={bioSupported
-              ? "ใช้ Face ID, Touch ID หรือลายนิ้วมือแทนการพิมพ์รหัสผ่านหลัก เฉพาะในเบราว์เซอร์หรือแอปนี้ (iPhone ต้อง iOS 18 ขึ้นไป)"
+              ? "ใช้ Face ID, Touch ID หรือลายนิ้วมือแทนรหัสผ่านหลัก เฉพาะในเบราว์เซอร์หรือแอปนี้ (iPhone ต้อง iOS 18 ขึ้นไป)"
               : "เบราว์เซอร์นี้ไม่มีตัวยืนยันตัวตนในเครื่อง หรือยังไม่รองรับ"}>
               {bioSupported
                 ? <Toggle checked={biometric} onChange={() => void toggleBiometric()} label="ปลดล็อกด้วย Passkey" disabled={bioBusy} />
