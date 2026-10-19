@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 import { b64, isEnvelope, newKey, seal, unb64, unseal } from "../src/lib/crypto"
 import { analyze, applyEdit, emptyVault, migrate, newItem, TYPES, type ItemType } from "../src/lib/model"
 import { applyFilter } from "../src/vault"
-import { randomPassword, passphrase, pin } from "../src/lib/password"
+import { COMMON_SYMBOLS, SYMBOLS, cleanSymbols, randomPassword, passphrase, pin } from "../src/lib/password"
 import { parseTotp, totpAt } from "../src/lib/totp"
 
 const password = "Only-test!Master-2026"
@@ -80,6 +80,20 @@ describe("password and TOTP generators", () => {
     expect(randomPassword({ length: 18, upper: false, numbers: false, symbols: false, avoidAmbiguous: false })).toMatch(/^[a-z]{18}$/)
     expect(pin(8)).toMatch(/^\d{8}$/)
     expect(passphrase(7).split("-")).toHaveLength(7)
+  })
+  it("limits symbols to the ones a site accepts", () => {
+    const base = { length: 16, upper: true, numbers: true, symbols: true, avoidAmbiguous: false }
+    for (let i = 0; i < 20; i++) {
+      const value = randomPassword({ ...base, symbolSet: "!@" })
+      expect(value).toMatch(/^[a-zA-Z0-9!@]{16}$/)
+      expect(value).toMatch(/[!@]/) // the narrowed set still counts as an enabled class
+      expect(randomPassword({ ...base, symbolSet: COMMON_SYMBOLS })).toMatch(/^[a-zA-Z0-9!@#$%*_-]{16}$/)
+    }
+    expect(randomPassword({ ...base, symbolSet: "" })).toMatch(/^[a-zA-Z0-9]{16}$/) // empty set: no symbols at all
+    expect(randomPassword({ ...base, symbolSet: "ab 12" })).toMatch(/^[a-zA-Z0-9]{16}$/) // nothing usable left: no symbols
+    expect(cleanSymbols("a!b@ 1!#\t")).toBe("!@#") // letters, digits, spaces and repeats dropped, order kept
+    expect(cleanSymbols(SYMBOLS)).toBe(SYMBOLS)
+    expect(COMMON_SYMBOLS.split("").every((c) => SYMBOLS.includes(c))).toBe(true)
   })
   it("matches published RFC 6238 SHA-1 vectors", async () => {
     const p = parseTotp("otpauth://totp/Test?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&digits=8")!

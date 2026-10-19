@@ -1,6 +1,7 @@
 // Presentational building blocks from the Figma Make design (Design Vault Password Manager).
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react"
 import { AlertTriangle, LockKeyhole, X } from "lucide-react"
+import { COMMON_SYMBOLS, SYMBOLS, cleanSymbols, type GenOptions } from "./lib/password"
 
 type ButtonProps = {
   children: ReactNode
@@ -73,6 +74,40 @@ export function SettingToggle({ label, checked, onChange }: { label: string; che
     <div className="setting-toggle">
       <span>{label}</span>
       <Toggle checked={checked} onChange={onChange} label={label} />
+    </div>
+  )
+}
+
+/** Random-password options shared by the generator page and the item editor. `compact` is the editor's boxed layout.
+ *  Uses spans and aria-labels instead of <label htmlFor>, so it can sit next to a field's own label without nesting labels. */
+export function GeneratorOptions({ value, onChange, compact }: { value: GenOptions; onChange: (o: GenOptions) => void; compact?: boolean }) {
+  const set = (patch: Partial<GenOptions>) => onChange({ ...value, ...patch })
+  const symbolSet = value.symbolSet ?? SYMBOLS
+  return (
+    <div className={`generator-options ${compact ? "generator-options--compact" : ""}`}>
+      <div className="range-heading">
+        <span>ความยาว</span>
+        <output>{value.length} ตัวอักษร</output>
+      </div>
+      <input className="range" type="range" min={8} max={64} value={value.length} aria-label="ความยาว" onChange={(e) => set({ length: Number(e.target.value) })} />
+      <SettingToggle label="ตัวอักษรพิมพ์ใหญ่" checked={value.upper} onChange={() => set({ upper: !value.upper })} />
+      <SettingToggle label="ตัวเลข" checked={value.numbers} onChange={() => set({ numbers: !value.numbers })} />
+      <SettingToggle label="สัญลักษณ์" checked={value.symbols} onChange={() => set({ symbols: !value.symbols })} />
+      {value.symbols && (
+        <div className="symbol-set">
+          <div className="symbol-set-heading">
+            <span>สัญลักษณ์ที่ใช้ได้</span>
+            <span>
+              <button type="button" className="text-action" onClick={() => set({ symbolSet: COMMON_SYMBOLS })}>เฉพาะที่เว็บส่วนใหญ่รับ</button>
+              <button type="button" className="text-action" onClick={() => set({ symbolSet: SYMBOLS })}>ทั้งหมด</button>
+            </span>
+          </div>
+          <input className="mono" value={symbolSet} aria-label="สัญลักษณ์ที่ใช้ได้" placeholder="เช่น !@#$" spellCheck={false} autoComplete="off" autoCapitalize="off"
+            onChange={(e) => set({ symbolSet: cleanSymbols(e.target.value) })} />
+          <small className="input-hint">{symbolSet ? `พิมพ์เฉพาะสัญลักษณ์ที่เว็บนั้นรับ · ใช้ ${symbolSet.length} ตัว` : "ว่าง: จะสุ่มโดยไม่ใช้สัญลักษณ์"}</small>
+        </div>
+      )}
+      <SettingToggle label="เลี่ยงตัวอักษรที่คล้ายกัน" checked={value.avoidAmbiguous} onChange={() => set({ avoidAmbiguous: !value.avoidAmbiguous })} />
     </div>
   )
 }

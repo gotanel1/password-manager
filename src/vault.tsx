@@ -1,10 +1,10 @@
 // Vault view: sidebar filters, item list rows, item detail, and the create/edit flows.
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from "react"
+import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from "react"
 import {
   AlertTriangle, Archive, ArrowLeft, Banknote, ChevronDown, ChevronRight, CircleUserRound, Copy, CreditCard, Eye, EyeOff, FileText, Folder, FolderPlus,
-  Globe2, History, KeyRound, MoreHorizontal, Plus, RefreshCw, RotateCcw, Settings, ShieldCheck, Star, Tag, Trash2, UserRound, WandSparkles, Wifi,
+  Globe2, History, KeyRound, MoreHorizontal, Plus, RefreshCw, RotateCcw, Settings, ShieldCheck, SlidersHorizontal, Star, Tag, Trash2, UserRound, WandSparkles, Wifi,
 } from "lucide-react"
-import { Button, IconButton, Modal, SidebarItem, StrengthMeter, Toggle, useConfirm } from "./ui"
+import { Button, GeneratorOptions, IconButton, Modal, SidebarItem, StrengthMeter, Toggle, useConfirm } from "./ui"
 import { useVault } from "./state"
 import {
   TYPES, applyEdit, domainOf, headlineOf, iconFor, primaryWarning, subtitleOf, thaiDate, type Issue, type Item, type ItemType,
@@ -12,7 +12,7 @@ import {
 import { parseTotp, secondsLeft, totpAt } from "./lib/totp"
 import { LIMITS, itemWarnings, parseTags, validateFolderName, validateItem } from "./lib/validate"
 import { applyMask, formatCardNumber } from "./lib/masks"
-import { randomPassword, strength } from "./lib/password"
+import { DEFAULT_GEN, randomPassword, strength, type GenOptions } from "./lib/password"
 
 export const TYPE_ICON: Record<ItemType, (size?: number) => ReactNode> = {
   login: (s = 18) => <KeyRound size={s} />,
@@ -452,6 +452,8 @@ export function ItemEditor({ initial, isNew, focusPassword, close, onSaved }: {
   const [item, setItem] = useState<Item>(initial)
   const [tagText, setTagText] = useState(initial.tags.join(", "))
   const [reveal, setReveal] = useState<Record<string, boolean>>({})
+  const [gen, setGen] = useState<GenOptions>(DEFAULT_GEN)
+  const [genOpen, setGenOpen] = useState(false)
   const [touched, setTouched] = useState<Record<string, boolean>>({})
   const [submitted, setSubmitted] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -466,6 +468,8 @@ export function ItemEditor({ initial, isNew, focusPassword, close, onSaved }: {
   const dirty = JSON.stringify({ ...item, tags: parseTags(tagText) }) !== JSON.stringify(initial)
 
   const setField = (k: string, v: string) => setItem((i) => ({ ...i, fields: { ...i.fields, [k]: v } }))
+  /** Fills the password field with a fresh random one and shows it, so the person can see what the site is asked to accept. */
+  const generate = (o: GenOptions) => { setField("password", randomPassword(o)); setReveal((r) => ({ ...r, password: true })) }
   const pw = item.fields.password
   const s = strength(pw ?? "")
 
@@ -526,7 +530,8 @@ export function ItemEditor({ initial, isNew, focusPassword, close, onSaved }: {
         </label>
 
         {TYPES[item.type].fields.map((f) => (
-          <label className="master-field" key={f.key}>
+          <Fragment key={f.key}>
+          <label className="master-field">
             <span>{f.label}</span>
             {f.multiline ? (
               <textarea value={item.fields[f.key] ?? ""} onChange={(e) => setField(f.key, e.target.value)} rows={3} {...aria(f.key)} />
@@ -539,10 +544,10 @@ export function ItemEditor({ initial, isNew, focusPassword, close, onSaved }: {
                   {reveal[f.key] ? <EyeOff size={17} /> : <Eye size={17} />}
                 </IconButton>
                 {f.key === "password" && (
-                  <IconButton label="สร้างรหัสผ่านใหม่" onClick={() => {
-                    setField("password", randomPassword({ length: 20, upper: true, numbers: true, symbols: true, avoidAmbiguous: true }))
-                    setReveal({ ...reveal, password: true })
-                  }}><RefreshCw size={17} /></IconButton>
+                  <>
+                    <IconButton label="สร้างรหัสผ่านใหม่" onClick={() => generate(gen)}><RefreshCw size={17} /></IconButton>
+                    <IconButton label="ตัวเลือกการสุ่ม" active={genOpen} onClick={() => setGenOpen(!genOpen)}><SlidersHorizontal size={17} /></IconButton>
+                  </>
                 )}
               </div>
             ) : (
@@ -554,6 +559,10 @@ export function ItemEditor({ initial, isNew, focusPassword, close, onSaved }: {
             {msg(f.key)}
             {f.key === "password" && pw ? <StrengthMeter level={s.level} label={`${s.label} · ${s.crack}`} /> : null}
           </label>
+          {f.key === "password" && genOpen && (
+            <GeneratorOptions compact value={gen} onChange={(o) => { setGen(o); generate(o) }} />
+          )}
+          </Fragment>
         ))}
 
         <div className="editor-grid">

@@ -2078,6 +2078,21 @@ input.mono, .editor-input input.mono { font-family: "JetBrains Mono", monospace;
 .generated-value .ch-num { color: var(--success); }
 .generated-value .ch-sym { color: var(--warning); }
 
+/* Random-password options, on the generator page and (compact) under the editor's password field */
+.generator-options--compact { margin: 8px 0 4px; padding: 12px 14px 4px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-subtle); }
+.generator-options--compact .range { margin: 12px 0 14px; }
+.generator-options--compact .setting-toggle { min-height: 44px; }
+.symbol-set { display: flex; flex-direction: column; gap: 6px; padding: 8px 0 12px; border-top: 1px solid var(--border); }
+.symbol-set-heading { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; font-weight: 600; }
+.symbol-set-heading span:last-child { display: flex; gap: 2px; }
+.symbol-set-heading .text-action { min-height: 32px; margin: 0; padding: 0 6px; }
+.symbol-set input {
+  min-height: 42px; padding: 0 12px; border: 1px solid var(--border-strong); border-radius: 9px; outline: 0; color: var(--text); background: var(--surface);
+  font: inherit; font-size: 16px; font-family: "JetBrains Mono", monospace; letter-spacing: .12em;
+}
+.symbol-set input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent); }
+.symbol-set .input-hint { text-align: left; }
+
 /* Detail extras */
 .history-row:disabled { opacity: 1; cursor: default; }
 .history-row > svg.is-open { transform: rotate(90deg); }
