@@ -29,6 +29,13 @@ describe("installable app (PWA)", () => {
     expect(pngSize(`public${apple}`)).toBe("180x180")
   })
 
+  it("keeps fields at 16px on phones so iOS does not zoom into them, without disabling zoom", () => {
+    const viewport = text("index.html").match(/name="viewport" content="([^"]+)"/)![1]
+    expect(viewport).not.toMatch(/user-scalable|maximum-scale/)
+    const phone = text("src/index.css").match(/@media \(max-width: 740px\) \{\s*input, textarea, select,[^}]*font-size: 16px;/)
+    expect(phone).not.toBeNull()
+  })
+
   it("lets the CSP load the manifest and the worker", () => {
     const csp = text("netlify.toml").match(/Content-Security-Policy = "([^"]+)"/)![1]
     expect(csp).toContain("manifest-src 'self'")

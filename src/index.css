@@ -2091,6 +2091,19 @@ input.mono, .editor-input input.mono { font-family: "JetBrains Mono", monospace;
   .menu { right: 12px; }
 }
 
+/* iOS Safari zooms into a field whose text is smaller than 16px, which breaks the app feel of the
+   installed PWA. Keep every field at 16px on phones instead of disabling zoom in the viewport meta,
+   which would also take pinch-zoom away from people who need it. The selectors repeat the ones that
+   set smaller sizes above so this rule wins on specificity, not just on order. */
+@media (max-width: 740px) {
+  input, textarea, select,
+  .access-input input, .search-box input, .mobile-search input,
+  .editor-form .master-field > input, .editor-form textarea, .editor-input input,
+  .select-wrap select, .select-wrap--compact select {
+    font-size: 16px;
+  }
+}
+
 /* Validation and confirmation */
 .req { color: var(--danger); font-style: normal; }
 .input-warning { color: var(--warning); font-size: 10px; font-weight: 500; }
