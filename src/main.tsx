@@ -21,3 +21,8 @@ createRoot(document.getElementById("root")!).render(
     </ConfirmProvider>
   </StrictMode>,
 )
+
+// Production only: the worker serves an offline page and caches nothing else (see public/sw.js).
+if (import.meta.env.PROD && "serviceWorker" in navigator) {
+  window.addEventListener("load", () => void navigator.serviceWorker.register("/sw.js").catch(() => {}))
+}
