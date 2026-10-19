@@ -4,11 +4,11 @@ import {
   AlertTriangle, Check, ChevronDown, ChevronRight, Clock3, Copy, Download, Fingerprint, KeyRound, Laptop, LogOut, Moon, Network, RefreshCw,
   Settings, Shield, ShieldCheck, Sun, Upload, WandSparkles, LifeBuoy,
 } from "lucide-react"
-import { Badge, Button, IconButton, Modal, PageTitle, SettingToggle, SettingsRow, SettingsSection, Soon, Toggle, useConfirm } from "./ui"
+import { Badge, Button, GeneratorOptions, IconButton, Modal, PageTitle, SettingsRow, SettingsSection, Soon, Toggle, useConfirm } from "./ui"
 import { useVault } from "./state"
 import { RecoveryCodeCard } from "./access"
 import { ago, type Issue } from "./lib/model"
-import { passphrase, pin, randomPassword, strength } from "./lib/password"
+import { DEFAULT_GEN, passphrase, pin, randomPassword, strength, type GenOptions } from "./lib/password"
 import type { Prefs } from "./lib/prefs"
 import { ImportCsvModal } from "./ImportCsvModal"
 
@@ -19,19 +19,15 @@ export function Generator() {
   const { data, update, copy } = useVault()
   const confirm = useConfirm()
   const [mode, setMode] = useState<Mode>("สุ่มรหัสผ่าน")
-  const [length, setLength] = useState(20)
-  const [upper, setUpper] = useState(true)
-  const [numbers, setNumbers] = useState(true)
-  const [symbols, setSymbols] = useState(true)
-  const [avoidAmbiguous, setAvoidAmbiguous] = useState(true)
+  const [gen, setGen] = useState<GenOptions>(DEFAULT_GEN)
+  const [length, setLength] = useState(7) // words or PIN digits; the random password's length lives in `gen`
   const [value, setValue] = useState("")
 
-  const range = mode === "สุ่มรหัสผ่าน" ? [8, 64] : mode === "วลีรหัสผ่าน" ? [4, 12] : [4, 12]
+  const range = [4, 12]
   const len = Math.min(range[1], Math.max(range[0], length))
-  const regenerate = () =>
-    setValue(mode === "รหัส PIN" ? pin(len) : mode === "วลีรหัสผ่าน" ? passphrase(len) : randomPassword({ length: len, upper, numbers, symbols, avoidAmbiguous }))
-  useEffect(regenerate, [mode, len, upper, numbers, symbols, avoidAmbiguous])
-  const changeMode = (m: Mode) => { setMode(m); setLength(m === "สุ่มรหัสผ่าน" ? 20 : m === "วลีรหัสผ่าน" ? 7 : 6) }
+  const regenerate = () => setValue(mode === "รหัส PIN" ? pin(len) : mode === "วลีรหัสผ่าน" ? passphrase(len) : randomPassword(gen))
+  useEffect(regenerate, [mode, len, gen])
+  const changeMode = (m: Mode) => { setMode(m); setLength(m === "วลีรหัสผ่าน" ? 7 : 6) }
 
   const s = strength(value)
   const copyAndRemember = async () => {
@@ -62,17 +58,15 @@ export function Generator() {
             <span>{s.crack}</span>
           </div>
           <div className="generator-settings">
-            <div className="range-heading">
-              <label htmlFor="length">{mode === "วลีรหัสผ่าน" ? "จำนวนคำ" : "ความยาว"}</label>
-              <output>{len} {mode === "วลีรหัสผ่าน" ? "คำ" : mode === "รหัส PIN" ? "หลัก" : "ตัวอักษร"}</output>
-            </div>
-            <input id="length" className="range" type="range" min={range[0]} max={range[1]} value={len} onChange={(e) => setLength(Number(e.target.value))} />
-            {mode === "สุ่มรหัสผ่าน" && (
+            {mode === "สุ่มรหัสผ่าน" ? (
+              <GeneratorOptions value={gen} onChange={setGen} />
+            ) : (
               <>
-                <SettingToggle label="ตัวอักษรพิมพ์ใหญ่" checked={upper} onChange={() => setUpper(!upper)} />
-                <SettingToggle label="ตัวเลข" checked={numbers} onChange={() => setNumbers(!numbers)} />
-                <SettingToggle label="สัญลักษณ์" checked={symbols} onChange={() => setSymbols(!symbols)} />
-                <SettingToggle label="เลี่ยงตัวอักษรที่คล้ายกัน" checked={avoidAmbiguous} onChange={() => setAvoidAmbiguous(!avoidAmbiguous)} />
+                <div className="range-heading">
+                  <label htmlFor="length">{mode === "วลีรหัสผ่าน" ? "จำนวนคำ" : "ความยาว"}</label>
+                  <output>{len} {mode === "วลีรหัสผ่าน" ? "คำ" : "หลัก"}</output>
+                </div>
+                <input id="length" className="range" type="range" min={range[0]} max={range[1]} value={len} onChange={(e) => setLength(Number(e.target.value))} />
               </>
             )}
           </div>

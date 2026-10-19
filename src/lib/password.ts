@@ -7,13 +7,25 @@ export function randInt(max: number) {
   return a[0] % max
 }
 
-export type GenOptions = { length: number; upper: boolean; numbers: boolean; symbols: boolean; avoidAmbiguous: boolean }
+/** Every symbol the generator can use. */
+export const SYMBOLS = "!@#$%^&*()-_=+[]{};:,.?"
+/** The symbols most sign-up forms accept, for sites that reject brackets and punctuation. */
+export const COMMON_SYMBOLS = "!@#$%*-_"
+
+/** Keeps only symbols (no letters, digits or spaces), each once, in the order typed. */
+export const cleanSymbols = (s: string) => [...new Set([...s])].filter((c) => /^[^\sa-zA-Z0-9]$/.test(c)).join("")
+
+/** `symbolSet` narrows the symbols to the ones a site accepts; an empty set means no symbols. */
+export type GenOptions = { length: number; upper: boolean; numbers: boolean; symbols: boolean; avoidAmbiguous: boolean; symbolSet?: string }
+
+export const DEFAULT_GEN: GenOptions = { length: 20, upper: true, numbers: true, symbols: true, avoidAmbiguous: true, symbolSet: SYMBOLS }
 
 export function randomPassword(o: GenOptions) {
   const sets = [o.avoidAmbiguous ? "abcdefghijkmnpqrstuvwxyz" : "abcdefghijklmnopqrstuvwxyz"]
   if (o.upper) sets.push(o.avoidAmbiguous ? "ABCDEFGHJKLMNPQRSTUVWXYZ" : "ABCDEFGHIJKLMNOPQRSTUVWXYZ")
   if (o.numbers) sets.push(o.avoidAmbiguous ? "23456789" : "0123456789")
-  if (o.symbols) sets.push("!@#$%^&*()-_=+[]{};:,.?")
+  const symbols = cleanSymbols(o.symbolSet ?? SYMBOLS)
+  if (o.symbols && symbols) sets.push(symbols)
   const all = sets.join("")
   const out = sets.map((s) => s[randInt(s.length)]) // at least one of each enabled class
   while (out.length < o.length) out.push(all[randInt(all.length)])
