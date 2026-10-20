@@ -148,6 +148,7 @@ export default function App() {
       (previous, blob) => saveVault(owner, previous, blob),
       (committed) => { if (sessionRef.current === session) setData(committed) },
       (state) => { if (sessionRef.current === session) setSync(state) },
+      () => fetchVault(owner),
     )
     sessionRef.current = session
     setData(o.data)

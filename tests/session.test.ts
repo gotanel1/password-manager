@@ -69,6 +69,50 @@ describe("vault save lifecycle", () => {
   })
 })
 
+/** Two devices unlocked on the same vault, saving to one version-checked server. */
+async function twoDevices(data = emptyVault()) {
+  const vaultKey = await newVaultKey()
+  const header = await newHeader(vaultKey, await deriveForEmail(password, email), newRecoveryCode())
+  let server: { blob: EnvelopeV2 | Envelope; version: number } = { blob: await sealV2(header, vaultKey, data), version: 1 }
+  const save = vi.fn(async (previous: typeof server, blob: EnvelopeV2) => {
+    if (previous.version !== server.version) throw new ConflictError()
+    server = { blob, version: server.version + 1 }
+    return server
+  })
+  const load = vi.fn(async () => server)
+  const device = () => new VaultSession(vaultKey, header, data, server, save, undefined, undefined, load)
+  return { a: device(), b: device(), server: () => server, setServer: (s: typeof server) => { server = s } }
+}
+const rename = (item: ReturnType<typeof newItem>, title: string) => (d: ReturnType<typeof emptyVault>) =>
+  ({ ...d, items: d.items.map((i) => (i.id === item.id ? { ...item, title } : i)) })
+
+describe("saving after another device saved", () => {
+  it("applies the edit on top of the newer vault instead of locking", async () => {
+    const { a, b, server } = await twoDevices()
+    await a.update(add("from A"))
+    await b.update(add("from B"))
+    expect(await open(server().blob, password)).toMatchObject({ items: [{ title: "from A" }, { title: "from B" }] })
+    expect(b.data.items.map((i) => i.title)).toEqual(["from A", "from B"])
+    // The rebased device keeps saving normally afterwards.
+    await b.update(add("again"))
+    expect(server().version).toBe(4)
+  })
+  it("refuses to overwrite an item the other device changed", async () => {
+    const item = { ...newItem("login"), title: "shared" }
+    const { a, b, server } = await twoDevices({ ...emptyVault(), items: [item] })
+    await a.update(rename(item, "renamed on A"))
+    await expect(b.update(rename(item, "renamed on B"))).rejects.toBeInstanceOf(ConflictError)
+    expect(await open(server().blob, password)).toMatchObject({ items: [{ title: "renamed on A" }] })
+  })
+  it("refuses when the newer vault no longer opens with this key", async () => {
+    const { b, setServer } = await twoDevices()
+    const otherKey = await newVaultKey()
+    const other = await newHeader(otherKey, await deriveForEmail(password, email), newRecoveryCode())
+    setServer({ blob: await sealV2(other, otherKey, emptyVault()), version: 2 })
+    await expect(b.update(add("stale"))).rejects.toBeInstanceOf(ConflictError)
+  })
+})
+
 describe("master password change (single password)", () => {
   it("re-wraps between queued edits, moves the login, and drops the old slot", async () => {
     const { session } = await setup()
