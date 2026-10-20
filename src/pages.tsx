@@ -7,7 +7,7 @@ import {
 } from "lucide-react"
 import { Badge, Button, GeneratorOptions, IconButton, Modal, PageTitle, SettingsRow, SettingsSection, Soon, Toggle, useConfirm } from "./ui"
 import { useVault } from "./state"
-import { RecoveryCodeCard } from "./access"
+import { RecoveryCodeCard, masterChecks } from "./access"
 import { ago, type Issue } from "./lib/model"
 import { DEFAULT_GEN, passphrase, pin, randomPassword, strength, type GenOptions } from "./lib/password"
 import type { Prefs } from "./lib/prefs"
@@ -369,10 +369,10 @@ function ChangeMasterModal({ close }: { close: () => void }) {
   const [confirmPw, setConfirm] = useState("")
   const [error, setError] = useState("")
   const [busy, setBusy] = useState(false)
-  const s = strength(newPw)
   const submit = async (e: FormEvent) => {
     e.preventDefault()
-    if (newPw.length < 12 || s.level < 3) return setError("รหัสผ่านหลักใหม่ต้องยาวอย่างน้อย 12 ตัวและแข็งแรง")
+    // Same rules as sign-up; the confirmation is compared below for its own message.
+    if (!masterChecks(newPw, newPw).ok) return setError("รหัสผ่านหลักใหม่ต้องยาวอย่างน้อย 12 ตัวและแข็งแรง")
     if (newPw !== confirmPw) return setError("รหัสผ่านใหม่ไม่ตรงกัน")
     setBusy(true)
     const err = await changeMaster(oldPw, newPw)

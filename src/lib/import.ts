@@ -1,4 +1,5 @@
 import { newItem, type Item, type VaultData } from "./model"
+import { parseTotp } from "./totp"
 
 export const MAX_IMPORT_BYTES = 5 * 1024 * 1024
 const MAX_ROWS = 10_000
@@ -56,13 +57,17 @@ export function parsePasswordCsv(text: string): CsvImport {
     if (type !== "login" && type !== "note") throw new Error(`ไม่รองรับประเภทข้อมูลที่รายการ ${index + 1} (รองรับ login และ note)`)
     const item = newItem(type)
     item.title = get("name") || get(bitwarden ? "login_uri" : "url") || "ไม่มีชื่อ"
+    const totp = type === "login" && bitwarden ? get("login_totp") : ""
+    // A key this app cannot read (e.g. steam://) would block saving the item later, so it goes to the notes.
+    const badTotp = totp && !parseTotp(totp) ? totp : ""
     if (type === "login") item.fields = {
       username: get(bitwarden ? "login_username" : "username"),
       password: get(bitwarden ? "login_password" : "password"),
       url: get(bitwarden ? "login_uri" : "url"),
-      totp: bitwarden ? get("login_totp") : "",
+      totp: badTotp ? "" : totp,
     }
-    item.notes = [get("note"), get("notes"), ...columns.flatMap((key, i) => !known.has(key) && record[i] ? [`${header[i]}: ${record[i]}`] : [])].filter(Boolean).join("\n")
+    item.notes = [get("note"), get("notes"), ...columns.flatMap((key, i) => !known.has(key) && record[i] ? [`${header[i]}: ${record[i]}`] : []),
+      badTotp && `login_totp: ${badTotp}`].filter(Boolean).join("\n")
     item.folder = bitwarden ? get("folder") : ""
     item.favorite = bitwarden && get("favorite") === "1"
     if (item.fields.password) item.passwordChanged = item.created

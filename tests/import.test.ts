@@ -3,6 +3,7 @@ import { MAX_IMPORT_BYTES, mergeCsvImport, parsePasswordCsv, planCsvImport } fro
 import { emptyVault, migrate } from "../src/lib/model"
 import { deriveForEmail, headerOf, newHeader, newVaultKey, openV2, sealV2 } from "../src/lib/keys"
 import { VaultSession } from "../src/lib/session"
+import { validateItem } from "../src/lib/validate"
 
 const chrome = 'name,url,username,password,note\r\nExample,https://example.invalid,user,test-only-secret,note'
 const bwHeader = "folder,favorite,type,name,notes,fields,reprompt,login_uri,login_username,login_password,login_totp"
@@ -19,6 +20,12 @@ describe("CSV import", () => {
     expect(parsed.items[0]).toMatchObject({ folder: "Work", favorite: true, fields: { totp: "ABCDEF" }, notes: "memo\nfields: custom: value\nreprompt: 1" })
     expect(parsed.items[1]).toMatchObject({ type: "note", title: "Private", notes: "memo", fields: {} })
     expect(mergeCsvImport(emptyVault(), parsed.items).folders).toContain("Work")
+  })
+  it("moves a 2FA key the app cannot use into the notes, so the item stays editable", () => {
+    const [item] = parsePasswordCsv(`${bwHeader}\n,,login,Steam,memo,,,https://example.invalid,user,pw,steam://TESTONLYKEY`).items
+    expect(item.fields.totp).toBe("")
+    expect(item.notes).toBe("memo\nlogin_totp: steam://TESTONLYKEY")
+    expect(validateItem(item, "")).toEqual({})
   })
   it.each([
     "", "name,url,username,password", "name,url,username,password\n\"unclosed",
