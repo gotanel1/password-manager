@@ -63,3 +63,22 @@ it("keeps the dialog open after failure and allows retry", async () => {
   await submit()
   expect(host.querySelector('[role="dialog"]')).toBeNull()
 })
+it("checks a new master password with the same rules as sign-up", async () => {
+  vi.mocked(api.changeMaster).mockResolvedValue(null)
+  await act(async () => { [...host.querySelectorAll("button")].find((b) => b.textContent === "เปลี่ยน")!.click() })
+  const change = async (next: string) => {
+    const [oldPw, newPw, confirmPw] = host.querySelectorAll<HTMLInputElement>('[role="dialog"] input[type="password"]')
+    for (const [input, value] of [[oldPw, "Old-test!Master-2026"], [newPw, next], [confirmPw, next]] as const) {
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value)
+        input.dispatchEvent(new Event("input", { bubbles: true }))
+      })
+    }
+    await submit()
+  }
+  await change("aaaaaaaaaaaa") // 12 characters, but weak
+  expect(host.querySelector('[role="dialog"]')!.textContent).toContain("อย่างน้อย 12 ตัวและแข็งแรง")
+  expect(api.changeMaster).not.toHaveBeenCalled()
+  await change("Next-test!Master-2026")
+  expect(api.changeMaster).toHaveBeenCalledWith("Old-test!Master-2026", "Next-test!Master-2026")
+})
