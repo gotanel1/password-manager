@@ -103,6 +103,20 @@ describe("App vault integration", () => {
     await unlock()
     expect(h.api!.data.items[0].title).toBe("saved note")
   })
+  it("auto-locks on the first touch after the device slept past the limit", async () => {
+    await unlock()
+    const start = Date.now()
+    const clock = vi.spyOn(Date, "now")
+    try {
+      clock.mockReturnValue(start + 60_000)
+      await act(async () => { window.dispatchEvent(new Event("touchstart")) })
+      expect(host.textContent).not.toContain("locked screen")
+      // Timers do not run while the device sleeps; only the wall clock moves.
+      clock.mockReturnValue(start + 60_000 + 5 * 60_000)
+      await act(async () => { window.dispatchEvent(new Event("touchstart")) })
+      expect(host.textContent).toContain("locked screen")
+    } finally { clock.mockRestore() }
+  })
   it("refuses to open cached data after a failed refresh", async () => {
     h.fetch.mockRejectedValueOnce(new Error("offline"))
     let result: unknown
@@ -176,10 +190,10 @@ describe("App vault integration", () => {
   })
   it("auto-locks and applies dark-mode preferences", async () => {
     await unlock()
+    // Fake timers first, so the idle check that the new setting starts runs on them.
+    vi.useFakeTimers()
     await act(async () => { h.api!.setPrefs({ theme: "dark", autoLockMin: 1, clipboardSec: 15 }) })
     expect(document.documentElement.dataset.theme).toBe("dark")
-    vi.useFakeTimers()
-    // Reset the inactivity timer using a real listener after switching to fake timers.
     await act(async () => { window.dispatchEvent(new Event("mousemove")); await vi.advanceTimersByTimeAsync(60_000) })
     expect(host.textContent).toContain("locked screen")
   })
