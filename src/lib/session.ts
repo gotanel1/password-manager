@@ -1,13 +1,22 @@
 import { unb64 } from "./crypto"
 import {
-  deriveMasterKeys, newRecoveryCode, recoveryWrapKey, sealV2, unlockWithMaster, wrap, type EnvelopeV2, type Header,
+  deriveMasterKeys, headerOf, isEnvelopeV2, newRecoveryCode, openV2, recoveryWrapKey, sealV2, unlockWithMaster, wrap, type EnvelopeV2, type Header,
 } from "./keys"
-import type { VaultData } from "./model"
+import { migrate, type VaultData } from "./model"
 import { WrongPasswordError } from "./vaultkeys"
 import { ConflictError, type Remote } from "./sync"
 
 export type SyncState = "saved" | "saving" | "error"
 type Stored = NonNullable<Remote>
+
+const byId = (data: VaultData) => new Map(data.items.map((i) => [i.id, JSON.stringify(i)]))
+
+/** True if an item this edit adds, changes or removes was also changed (or removed) in `newer`. */
+function touchesChangedItem(base: VaultData, next: VaultData, newer: VaultData) {
+  const [before, after, theirs] = [byId(base), byId(next), byId(newer)]
+  return [...new Set([...before.keys(), ...after.keys()])]
+    .some((id) => before.get(id) !== after.get(id) && before.get(id) !== theirs.get(id))
+}
 
 /** One unlocked vault. Queued work never reads another account/session's refs. */
 export class VaultSession {
@@ -27,6 +36,8 @@ export class VaultSession {
     private save: (remote: Stored, blob: EnvelopeV2) => Promise<Stored>,
     private changed: (data: VaultData) => void = () => {},
     private status: (state: SyncState) => void = () => {},
+    /** Reads the stored vault, to rebase an edit after another device saved first. */
+    private load: () => Promise<Remote> = () => Promise.reject(new ConflictError()),
   ) {}
 
   private enqueue<T>(operation: () => Promise<T>): Promise<T> {
@@ -58,8 +69,24 @@ export class VaultSession {
 
   update(fn: (data: VaultData) => VaultData) {
     return this.enqueue(async () => {
-      const next = fn(this.data)
-      await this.commit(this.header, next)
+      const base = this.data
+      let next = fn(base)
+      try {
+        await this.commit(this.header, next)
+      } catch (e) {
+        if (!(e instanceof ConflictError)) throw e
+        // Another device saved first: apply the same edit on top of its vault and save once more.
+        const latest = await this.load()
+        const blob = latest?.blob as unknown
+        if (!latest || !isEnvelopeV2(blob)) throw e
+        let newer: VaultData
+        try { newer = migrate(await openV2(blob, this.vaultKey!)) } catch { throw e } // re-keyed: deleted and created again
+        const rebased = fn(newer)
+        if (touchesChangedItem(base, next, newer)) throw e
+        this.remote = latest
+        await this.commit(headerOf(blob), rebased)
+        next = rebased
+      }
       this.data = next
       this.changed(next)
     })
