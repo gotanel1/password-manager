@@ -201,11 +201,17 @@ export default function App() {
   // ---------- auto-lock ----------
   useEffect(() => {
     if (phase !== "app") return
-    let t = window.setTimeout(lock, prefs.autoLockMin * 60_000)
-    const touch = () => { window.clearTimeout(t); t = window.setTimeout(lock, prefs.autoLockMin * 60_000) }
+    // Timers stop counting while a phone or laptop sleeps, so idle time is measured on the wall clock.
+    const limit = prefs.autoLockMin * 60_000
+    let last = Date.now(), locked = false
+    const check = () => { if (!locked && Date.now() - last >= limit) { locked = true; lock() } }
+    // Check before resetting: the first touch after waking must lock, not extend the session.
+    const touch = () => { check(); if (!locked) last = Date.now() }
+    const t = window.setInterval(check, 5_000)
     const evs = ["mousemove", "keydown", "click", "touchstart", "scroll"]
     evs.forEach((e) => window.addEventListener(e, touch, { passive: true }))
-    return () => { window.clearTimeout(t); evs.forEach((e) => window.removeEventListener(e, touch)) }
+    document.addEventListener("visibilitychange", check)
+    return () => { window.clearInterval(t); evs.forEach((e) => window.removeEventListener(e, touch)); document.removeEventListener("visibilitychange", check) }
   }, [phase, prefs.autoLockMin, lock])
 
   // ---------- theme ----------
