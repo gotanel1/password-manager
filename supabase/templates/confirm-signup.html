@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ยืนยันอีเมลของคุณ — ตู้เซฟ</title>
+  </head>
+  <body style="margin: 0; padding: 0; background-color: #f7f8fa; color: #182132; font-family: Tahoma, Arial, sans-serif;">
+    <div style="display: none; max-height: 0; overflow: hidden; opacity: 0; mso-hide: all;">ยืนยันอีเมลเพื่อเริ่มใช้งานบัญชีตู้เซฟของคุณ</div>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color: #f7f8fa;">
+      <tr>
+        <td align="center" style="padding: 40px 16px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width: 100%; max-width: 520px;">
+            <tr>
+              <td style="padding: 0 8px 24px; color: #2f6fed; font-size: 24px; font-weight: bold;">ตู้เซฟ<span style="color: #667085; font-size: 14px; font-weight: normal;"> / Password Manager</span></td>
+            </tr>
+            <tr>
+              <td style="padding: 32px 24px; background-color: #ffffff; border: 1px solid #e1e5eb; border-radius: 16px;">
+                <p style="margin: 0 0 16px; color: #2f6fed; font-size: 13px; font-weight: bold;">ยืนยันการสร้างบัญชี</p>
+                <h1 style="margin: 0 0 16px; font-size: 26px; line-height: 1.5;">ยืนยันอีเมลของคุณ</h1>
+                <p style="margin: 0 0 24px; color: #667085; font-size: 16px; line-height: 1.8;">ขอบคุณที่สร้างบัญชีตู้เซฟ กรุณากดปุ่มด้านล่างเพื่อยืนยันอีเมลและเริ่มใช้งาน</p>
+                <table role="presentation" cellpadding="0" cellspacing="0">
+                  <tr>
+                    <td align="center" bgcolor="#2f6fed" style="border-radius: 8px; mso-padding-alt: 14px 28px;">
+                      <a href="{{ .ConfirmationURL }}" style="display: inline-block; padding: 14px 28px; border: 1px solid #2f6fed; border-radius: 8px; color: #ffffff; font-size: 16px; font-weight: bold; line-height: 1.5; text-decoration: none;">ยืนยันอีเมล</a>
+                    </td>
+                  </tr>
+                </table>
+                <p style="margin: 24px 0 8px; color: #667085; font-size: 13px; line-height: 1.8;">หากกดปุ่มไม่ได้ ให้คัดลอกลิงก์ด้านล่างไปเปิดในเบราว์เซอร์</p>
+                <p style="margin: 0; font-size: 12px; line-height: 1.8; word-break: break-all; overflow-wrap: anywhere;"><a href="{{ .ConfirmationURL }}" style="color: #2f6fed; text-decoration: underline;">{{ .ConfirmationURL }}</a></p>
+                <p style="margin: 24px 0 0; padding-top: 20px; border-top: 1px solid #e1e5eb; color: #667085; font-size: 13px; line-height: 1.8;">หากคุณไม่ได้สมัครบัญชีนี้ สามารถละเว้นอีเมลฉบับนี้ได้</p>
+              </td>
+            </tr>
+            <tr>
+              <td align="center" style="padding: 20px 12px 0; color: #667085; font-size: 12px; line-height: 1.8;">อีเมลนี้ใช้สำหรับยืนยันบัญชีตู้เซฟ<br />กรุณาอย่าส่งรหัสผ่านหลักหรือรหัสกู้คืนทางอีเมล</td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>
