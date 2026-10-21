@@ -5,11 +5,11 @@
 [build.environment]
   NODE_VERSION = "22"
 
-# Strict headers: only our own scripts run, and the page may only talk to Supabase.
+# Strict headers: only our own scripts run, and the page may only talk to itself and Supabase.
 [[headers]]
   for = "/*"
   [headers.values]
-    Content-Security-Policy = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; connect-src https://*.supabase.co wss://*.supabase.co; form-action 'none'; base-uri 'none'; frame-ancestors 'none'"
+    Content-Security-Policy = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; connect-src 'self' https://*.supabase.co wss://*.supabase.co; form-action 'none'; base-uri 'none'; frame-ancestors 'none'"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "no-referrer"
     Strict-Transport-Security = "max-age=63072000; includeSubDomains"

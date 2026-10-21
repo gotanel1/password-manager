@@ -40,6 +40,8 @@ describe("installable app (PWA)", () => {
     const csp = text("netlify.toml").match(/Content-Security-Policy = "([^"]+)"/)![1]
     expect(csp).toContain("manifest-src 'self'")
     expect(csp).toContain("worker-src 'self'")
+    // The worker inherits this CSP, so it needs connect-src 'self' to fetch /offline.html and pages
+    expect(csp).toMatch(/connect-src 'self' /)
   })
 })
 
