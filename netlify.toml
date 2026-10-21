@@ -5,6 +5,13 @@
 [build.environment]
   NODE_VERSION = "22"
 
+# The old netlify.app address forwards to the custom domain so there is one origin (passkeys and local settings are per-domain).
+[[redirects]]
+  from = "https://got-passwordmanager.netlify.app/*"
+  to = "https://pass.grocscode.com/:splat"
+  status = 301
+  force = true
+
 # Strict headers: only our own scripts run, and the page may only talk to itself and Supabase.
 [[headers]]
   for = "/*"
