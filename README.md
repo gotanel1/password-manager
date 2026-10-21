@@ -43,7 +43,7 @@ Supabase เห็นแค่กุญแจล็อกอิน ซึ่ง�
    ```
 3. ไปที่ **Authentication → Providers → Email** และ**ปิด "Secure password change"** (ค่าเริ่มต้นปิดอยู่แล้ว) เพราะแอปเปลี่ยนกุญแจล็อกอินผ่าน `updateUser` หลังผู้ใช้ยืนยันรหัสผ่านหลักแล้ว
 4. ไปที่ **Authentication → URL Configuration**
-   - ตั้ง **Site URL** เป็น URL ของ Netlify เช่น `https://your-site.netlify.app`
+   - ตั้ง **Site URL** เป็น URL ที่ผู้ใช้เปิดจริง ถ้ามีโดเมนของตัวเองให้ใช้โดเมนนั้น (ของเราคือ `https://pass.grocscode.com`) ไม่อย่างนั้นใช้ URL ของ Netlify เช่น `https://your-site.netlify.app`
    - เพิ่ม URL เดียวกันใน **Redirect URLs** (ทั้งลิงก์ยืนยันอีเมลและลิงก์ "ลืมรหัสผ่านหลัก" จะพากลับมาที่หน้านี้)
 5. ไปที่ **Project Settings → API** แล้วคัดลอก **Project URL** และ **anon / publishable key**
    ⚠️ ห้ามใช้ `service_role` key ในหน้าเว็บเด็ดขาด
