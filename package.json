@@ -6,6 +6,7 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit && tsc --project tsconfig.tests.json --noEmit",
     "verify:build": "node scripts/check-build.mjs",
+    "test:rls": "node --env-file=.env --env-file=.env.rls.local scripts/check-rls.mjs",
     "dev": "vite --host 127.0.0.1 --port 8765",
     "dev:mock": "cross-env VAULT_MOCK=1 vite --host 127.0.0.1 --port 8765",
     "build": "tsc && vite build",
